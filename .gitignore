@@ -1,0 +1,9 @@
+node_modules
+dist
+captures
+blender/preview
+*.blend1
+.vercel
+.env*.local
+.DS_Store
+.claude
