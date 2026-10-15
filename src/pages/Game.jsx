@@ -8,7 +8,9 @@ import {
   HUDDLE_RUNOFF,
   applyResult,
   callTimeout,
+  coachTip,
   dayNumber,
+  defenseFor,
   downAndDistance,
   fmtBallOn,
   fmtClock,
@@ -20,7 +22,8 @@ import {
   todayKey,
 } from '../game/drive'
 import { load, save } from '../game/storage'
-import { Countdown, DriveStrip, PlayCards, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
+import { Countdown, DefenseRead, DriveStrip, FieldBar, PlayCards, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
+import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
 
@@ -58,8 +61,11 @@ export default function Game({ mode: rawMode }) {
   const [status, setStatus] = useState({ phase: 'presnap' })
   const [replaying, setReplaying] = useState(false)
   const [liveClock, setLiveClock] = useState(scenario.clock)
+  const [preview, setPreview] = useState(null)
+  const [coverage, setCoverage] = useState({ call: 'cover3', shown: 'cover3' })
   const applied = useRef(null)
   const huddleFrom = useRef(null)
+  const difficulty = mode === 'survivor' ? survivor.game : 0
   if (import.meta.env.DEV) window.__sim = sim
 
   const los = drive.ballOn - 50
@@ -67,11 +73,15 @@ export default function Game({ mode: rawMode }) {
     (d) => {
       sim.camMode = 'broadcast'
       sim.timeScale = 1
-      sim.reset({ play: sim.play?.id ?? 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo })
+      // the defense lines up in its next look so you can read it before calling a play
+      const cov = defenseFor(d, difficulty)
+      sim.reset({ play: sim.play?.id ?? 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: cov, situation: { clock: d.clock }, difficulty })
+      setCoverage(cov)
+      setPreview(null)
       setSimKey((k) => k + 1)
       setReplaying(false)
     },
-    [sim],
+    [sim, difficulty],
   )
 
   // new scenario (mode switch, next survivor game, practice teams) -> fresh drive
@@ -115,9 +125,19 @@ export default function Game({ mode: rawMode }) {
 
   // ---------------------------------------------------------------- actions
   const takeField = () => {
+    unlock()
+    startAmbience()
+    sfx.whistle(0.25)
     huddleFrom.current = drive.clock
     setStage('call')
   }
+  useEffect(() => () => stopAmbience(), [])
+
+  // last ten seconds of a running clock: tick tock
+  const secondsLeft = Math.ceil(drive.clock)
+  useEffect(() => {
+    if (stage === 'call' && drive.clockRunning && secondsLeft <= 10 && secondsLeft > 0) sfx.tick()
+  }, [secondsLeft, stage, drive.clockRunning])
 
   const callPlay = (playId) => {
     let d = drive
@@ -136,15 +156,23 @@ export default function Game({ mode: rawMode }) {
     const seed = mode === 'daily' ? hashString(`${scenario.id}|${d.plays.length}|${playId}`) : (Math.random() * 2 ** 31) | 0
     sim.camMode = 'broadcast'
     sim.timeScale = 1
-    sim.reset({ play: playId, seed, los: d.ballOn - 50, toGo: d.toGo })
+    unlock()
+    sim.reset({ play: playId, seed, los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, difficulty })
     sim.snap()
+    setPreview(null)
     applied.current = null
     setSimKey((k) => k + 1)
     setReplaying(false)
     setStage('live')
   }
 
-  const timeout = () => setDrive((d) => callTimeout(d))
+  const timeout = () => {
+    sfx.whistle(0.3)
+    setDrive((d) => callTimeout(d))
+  }
+  const skip = () => {
+    sim.timeScale = replaying ? 3 : 4
+  }
 
   const onStatus = useCallback(
     (s) => {
@@ -174,7 +202,7 @@ export default function Game({ mode: rawMode }) {
   }
 
   const replay = () => {
-    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los })
+    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty })
     sim.camMode = 'close'
     sim.timeScale = 0.45
     sim.snap()
@@ -182,6 +210,20 @@ export default function Game({ mode: rawMode }) {
     setReplaying(true)
     setStage('live')
   }
+
+  // keyboard: Enter/Space = take the field / next play, R = replay, T = timeout (1-4 call plays, see PlayCards)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('select, input')) return
+      const k = e.key.toLowerCase()
+      if (stage === 'intro' && (k === 'enter' || k === ' ')) (e.preventDefault(), takeField())
+      else if (stage === 'result' && status.phase === 'over' && (k === 'enter' || k === ' ')) (e.preventDefault(), nextPlay())
+      else if (stage === 'result' && status.phase === 'over' && k === 'r') replay()
+      else if (stage === 'call' && k === 't' && drive.clockRunning && drive.timeouts) timeout()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   // ---------------------------------------------------------------- end of drive bookkeeping
   const finished = useRef(null)
@@ -238,6 +280,8 @@ export default function Game({ mode: rawMode }) {
             offense={offense}
             defense={defense}
             onStatus={onStatus}
+            onEvent={playEvent}
+            preview={stage === 'call' ? preview : null}
             los={inPlay ? sim.los : los}
             firstDown={inPlay ? (sim.firstDown >= 50 ? null : sim.firstDown) : firstDownZ >= 50 ? null : firstDownZ}
           />
@@ -271,9 +315,15 @@ export default function Game({ mode: rawMode }) {
                 <span className="clock-note">Clock stopped</span>
               )}
             </div>
+            <FieldBar drive={drive} offense={offense} defense={defense} />
             {drive.clockRunning && <div className="hurry">⏱ Clock is running, call it fast!</div>}
-            <PlayCards onCall={callPlay} />
+            <DefenseRead shown={coverage.shown} tip={coachTip(drive, coverage.shown)} />
+            <PlayCards onCall={callPlay} onPreview={setPreview} />
           </div>
+        )}
+
+        {stage === 'live' && status.phase === 'live' && sim.timeScale < 2 && (
+          <button className="btn small skip" onClick={skip}>Skip ⏩</button>
         )}
 
         {stage === 'result' && status.phase === 'over' && (

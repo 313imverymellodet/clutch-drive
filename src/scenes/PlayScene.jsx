@@ -6,6 +6,7 @@ import { MODEL_URL, SKIN_TONES, buildCharacter, handWorld } from '../three/chara
 import { Field } from '../components/Field'
 import { Stadium } from '../components/Stadium'
 import { BlobShadow, Football } from '../components/Props'
+import { RouteArt } from '../components/RouteArt'
 import { FIXED_DT, LOS } from '../sim/playSim'
 
 const focus = new THREE.Vector3(0, 0, LOS + 5)
@@ -17,7 +18,7 @@ const tmpTarget = new THREE.Vector3()
  * Draws a PlaySim. `version` changes whenever the sim is reset so the 22 characters are rebuilt.
  * offense/defense are NFL team objects from src/data/nflTeams.js.
  */
-export default function PlayScene({ sim, version, offense, defense, onStatus, los = LOS, firstDown = null }) {
+export default function PlayScene({ sim, version, offense, defense, onStatus, onEvent, los = LOS, firstDown = null, preview = null }) {
   const gltf = useGLTF(MODEL_URL)
   const { camera, size, gl, scene } = useThree()
   const ballRef = useRef()
@@ -83,6 +84,12 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, lo
 
     updateCamera(sim, camera, size, rawDt)
 
+    // sim events (snap, catch, tackle, ...) go to the UI for sound and feedback
+    if (sim.events.length) {
+      const evs = sim.events.splice(0)
+      if (onEvent) evs.forEach(onEvent)
+    }
+
     const status = `${sim.seed}|${sim.play.id}|${sim.phase}|${sim.message ?? ''}`
     if (status !== lastStatus.current) {
       lastStatus.current = status
@@ -119,6 +126,9 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, lo
         <BlobShadow key={`s${version}-${i}`} ref={(el) => (shadowRefs.current[i] = el)} size={1.5} />
       ))}
       <Football ref={ballRef} />
+      {preview && sim.phase === 'presnap' && (
+        <RouteArt play={preview} los={sim.los} toGo={sim.firstDown - sim.los} coverage={sim.coverage} />
+      )}
     </>
   )
 }

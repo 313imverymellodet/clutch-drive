@@ -46,6 +46,11 @@ await shot('intro')
 await click('Take the field')
 await sleep(1200)
 await shot('call')
+if (+w >= 600) {
+  await page.hover('.play:nth-child(2)') // route preview on hover
+  await sleep(500)
+  await shot('call-preview')
+}
 
 const list = calls.split(',')
 for (let i = 0; i < 14; i++) {

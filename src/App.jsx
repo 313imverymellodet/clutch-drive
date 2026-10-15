@@ -9,6 +9,7 @@ import { BRAND } from './brand'
 import { Logo } from './ui/Logo'
 import { load, save } from './game/storage'
 import { TeamSelect } from './ui/TeamSelect'
+import { MuteButton } from './ui/GameUI'
 
 const Game = lazy(() => import('./pages/Game'))
 
@@ -51,13 +52,16 @@ function Shell({ title, mode, children }) {
           <Logo size={26} />
           <span className="title">{BRAND.name.toUpperCase()}</span>
         </Link>
-        <nav className="tabs">
-          {['daily', 'survivor', 'practice'].map((m) => (
-            <Link key={m} to={`/play?mode=${m}`} className={mode === m ? 'on' : ''}>
-              {MODE_LABEL[m].replace(' Drive', '')}
-            </Link>
-          ))}
-        </nav>
+        <div className="top-right">
+          <nav className="tabs">
+            {['daily', 'survivor', 'practice'].map((m) => (
+              <Link key={m} to={`/play?mode=${m}`} className={mode === m ? 'on' : ''}>
+                {MODE_LABEL[m].replace(' Drive', '')}
+              </Link>
+            ))}
+          </nav>
+          {mode && <MuteButton />}
+        </div>
       </header>
       <div className="stage" aria-label={title}>{children}</div>
     </div>

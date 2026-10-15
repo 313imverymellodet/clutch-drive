@@ -1015,9 +1015,11 @@ export class PlaySim {
         continue
       }
       this.tackler = d
-      this.endPlay(t, 'tackle')
+      // a tackle right at the sideline usually knocks him out of bounds (and stops the clock)
+      const atSideline = Math.abs(c.pos.x) > (this.play.toSideline ? 16 : SIDELINE - 1.5)
+      this.endPlay(t, atSideline ? 'out' : 'tackle')
       c.pendingFall = t + 0.22
-      this.emit('tackle')
+      this.emit(atSideline ? 'out' : 'tackle')
       return
     }
   }

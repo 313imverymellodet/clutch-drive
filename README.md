@@ -17,6 +17,7 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
+- Before each snap the defense shows a look (Cover 1/2/3, blitz or prevent) and the coach suggests what beats it. Hover a play (or tap it once on a phone) to see its routes drawn on the field. Keys: 1–4 call plays, T timeout, Enter next play, R replay.
 - In a game, call one of four plays:
   - **Quick Out**: a short throw to the slot, who steps out of bounds to stop the clock (6–9 yards).
   - **Dig**: a safe pass to WR1 over the middle (usually 14–23 yards).
@@ -26,6 +27,17 @@ npm run dev          # http://localhost:5173
 - **Clock rules:** incompletions and runs out of bounds stop the clock. If you're tackled in bounds, the clock runs in real time while you pick the next play, with a minimum 8 seconds to line up. Timeouts stop it.
 
 Team names and colors are approximations, with no logos. Fan-made, not affiliated with the NFL.
+
+## Football AI
+
+The defense is a real opponent (`src/sim/playSim.js`):
+
+- **Play-calling:** `chooseDefense` picks a coverage from down, distance, clock and field position, and disguises it about 12% of the time (more in later Survivor games).
+- **Coverage:** man defenders read the receiver a beat late and extrapolate, so they stay with straight routes but get beat on sharp breaks. Some reps they "blanket" their man. Zone defenders drop to landmarks, squeeze receivers in their area, and break on the ball after the throw.
+- **Pass rush:** blockers pair up with rushers; rushers win their reps after a random time, and a free rusher shoots a gap. The QB senses pressure and throws early (less accurate), or gets sacked. If the defense shows blitz, the back and tight end stay in to block.
+- **After the catch:** the carrier scores a fan of directions for open space, defenders take intercept angles, teammates peel off to block, and tackles can be broken (especially arm tackles from behind).
+
+`node scripts/outcomes.mjs` prints the balance table of every play against every coverage. Roughly: Dig beats man and Cover 3; Quick Out beats zones and stops the clock; Deep Shot beats the blitz and Cover 1 but gets picked off against Prevent and two-deep zones; HB Dive works against zones and gets stuffed by the blitz.
 
 ## Character pipeline
 
@@ -55,7 +67,9 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | --- | --- |
 | `src/pages/Landing.jsx`, `src/scenes/HeroScene.jsx` | Landing page with a live 3D hero of today's matchup |
 | `src/pages/Game.jsx`, `src/ui/GameUI.jsx` | Game flow (intro → call → play → result → game over), scorebug, play cards, banners, share |
-| `src/game/drive.js` | Drive rules: clock, downs, field position, score, daily/survivor scenarios, share text |
+| `src/game/drive.js` | Drive rules: clock, downs, field position, score, daily/survivor scenarios, defensive call per snap, coach tips, share text |
+| `src/game/sound.js` | Synthesized WebAudio sound effects (whistle, hits, catches, crowd) and mute |
+| `src/components/RouteArt.jsx` | Pre-snap route preview drawn on the turf |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |

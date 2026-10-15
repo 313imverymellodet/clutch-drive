@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
-import { PLAYS } from '../sim/playSim'
+import { COVERAGES, PLAYS } from '../sim/playSim'
+import { isMuted, onMuteChange, setMuted, sfx, unlock } from '../game/sound'
 import { downAndDistance, fmtBallOn, fmtClock, QUARTER_LABEL } from '../game/drive'
 
 // ------------------------------------------------------------------ scorebug
@@ -64,17 +65,50 @@ function RouteIcon({ id }) {
   )
 }
 
-export function PlayCards({ onCall, disabled }) {
+/**
+ * Mouse: hovering a card draws its routes on the field, click snaps it.
+ * Touch: first tap previews ("tap again to snap"), second tap snaps. Keys 1-4 snap directly.
+ */
+export function PlayCards({ onCall, onPreview, disabled }) {
+  const [armed, setArmed] = useState(null)
+  const pointer = useRef('mouse')
+  const plays = Object.values(PLAYS)
+  useEffect(() => {
+    const onKey = (e) => {
+      if (disabled || e.metaKey || e.ctrlKey || e.altKey) return
+      const i = Number(e.key) - 1
+      if (plays[i]) onCall(plays[i].id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
   return (
-    <div className="plays">
-      {Object.values(PLAYS).map((p) => {
+    <div className="plays" onMouseLeave={() => pointer.current === 'mouse' && onPreview?.(null)}>
+      {plays.map((p, i) => {
         const meta = PLAY_META[p.id]
+        const isArmed = armed === p.id
         return (
-          <button key={p.id} className="play" onClick={() => onCall(p.id)} disabled={disabled}>
+          <button
+            key={p.id}
+            className={`play${isArmed ? ' armed' : ''}`}
+            disabled={disabled}
+            onPointerDown={(e) => (pointer.current = e.pointerType)}
+            onPointerEnter={(e) => e.pointerType === 'mouse' && onPreview?.(p.id)}
+            onClick={() => {
+              if (pointer.current !== 'mouse' && !isArmed) {
+                setArmed(p.id)
+                onPreview?.(p.id)
+                sfx.click()
+                return
+              }
+              onCall(p.id)
+            }}
+          >
+            <span className="kbd" aria-hidden="true">{i + 1}</span>
             <RouteIcon id={p.id} />
             <span className="play-text">
               <strong>{p.label}</strong>
-              <span>{p.detail}</span>
+              <span>{isArmed ? 'Tap again to snap it' : p.detail}</span>
             </span>
             <span className={`tag ${meta.tone}`}>{meta.tag}</span>
           </button>
@@ -84,10 +118,62 @@ export function PlayCards({ onCall, disabled }) {
   )
 }
 
+/** Where the ball is on the field, the line to gain, and both end zones. */
+export function FieldBar({ drive, offense, defense }) {
+  const pct = (yd) => `${Math.max(0, Math.min(100, yd))}%`
+  const line = Math.min(100, drive.ballOn + drive.toGo)
+  return (
+    <div className="fieldbar" aria-label={`Ball on the ${drive.ballOn < 50 ? 'own ' + drive.ballOn : 'opponent ' + (100 - drive.ballOn)}`}>
+      <span className="fb-ez" style={{ background: offense.endzone }} />
+      <div className="fb-field">
+        {[10, 20, 30, 40, 50, 60, 70, 80, 90].map((y) => (
+          <i key={y} className="fb-yd" style={{ left: pct(y) }} />
+        ))}
+        <span className="fb-redzone" />
+        {line < 100 && <span className="fb-line" style={{ left: pct(line) }} />}
+        <span className="fb-ball" style={{ left: pct(drive.ballOn) }}>🏈</span>
+      </div>
+      <span className="fb-ez" style={{ background: defense.endzone }} />
+    </div>
+  )
+}
+
+/** The look the defense is showing, plus one line from the coach. */
+export function DefenseRead({ shown, tip }) {
+  const c = COVERAGES[shown]
+  return (
+    <div className="read">
+      <span className={`read-chip ${shown}`}>
+        <b>D</b> {c.short}
+      </span>
+      <span className="read-tip">🧢 {tip}</span>
+    </div>
+  )
+}
+
+export function MuteButton() {
+  const [m, setM] = useState(isMuted())
+  useEffect(() => onMuteChange(setM), [])
+  return (
+    <button
+      className="icon-btn"
+      aria-label={m ? 'Unmute sound' : 'Mute sound'}
+      onClick={() => {
+        unlock()
+        setMuted(!m)
+      }}
+    >
+      {m ? '🔇' : '🔊'}
+    </button>
+  )
+}
+
 // ------------------------------------------------------------------ result banner
 export function headlineFor(result) {
   if (!result) return null
   if (result.kind === 'touchdown') return { big: 'TOUCHDOWN!', tone: 'td' }
+  if (result.kind === 'interception') return { big: 'INTERCEPTED!', tone: 'bad' }
+  if (result.kind === 'sack') return { big: 'SACKED!', tone: 'bad' }
   if (result.kind === 'incomplete') return { big: 'INCOMPLETE', tone: 'bad' }
   if (result.first) return { big: 'FIRST DOWN!', tone: 'good' }
   if (result.gain <= 0) return { big: 'STUFFED!', tone: 'bad' }

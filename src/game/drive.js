@@ -1,5 +1,6 @@
 import { NFL_TEAMS } from '../data/nflTeams'
 import { BRAND, LAUNCH_DATE } from '../brand'
+import { chooseDefense } from '../sim/playSim'
 
 /*
  * The drive: game clock, downs, field position, score, win/lose.
@@ -108,6 +109,7 @@ export function tickClock(d, seconds) {
 
 function emojiFor(result) {
   if (result.kind === 'touchdown') return '🏈'
+  if (result.kind === 'interception') return '❌'
   if (result.kind === 'incomplete' || result.gain <= 0) return '🟥'
   if (result.first) return '🟩'
   return '🟨'
@@ -121,6 +123,13 @@ export function applyResult(d, playId, result) {
   const ballOn = Math.min(100, Math.max(0, d.ballOn + gain))
   const entry = { playId, kind: result.kind, gain, first: result.first, emoji: emojiFor(result) }
   const next = { ...d, clock, plays: [...d.plays, entry] }
+
+  if (result.kind === 'interception') {
+    next.status = 'lost'
+    next.reason = `Intercepted by #${result.by ?? '?'}.`
+    next.clockRunning = false
+    return next
+  }
 
   if (result.kind === 'touchdown' || ballOn >= 100) {
     next.ballOn = 100
@@ -146,7 +155,7 @@ export function applyResult(d, playId, result) {
     next.toGo = line - ballOn
   }
   // incompletions and plays out of bounds stop the clock; tackles in bounds keep it running
-  next.clockRunning = result.kind === 'tackle'
+  next.clockRunning = result.kind === 'tackle' || result.kind === 'sack'
 
   if (next.down > 4) {
     next.status = 'lost'
@@ -168,4 +177,27 @@ export function shareText(d, { mode, day, streak, url }) {
   const grid = d.plays.map((p) => p.emoji).join('')
   const extra = mode === 'survivor' && streak ? `\nSurvivor streak: ${streak} 🔥` : ''
   return `${title} 🏈\n${line}\n${grid}${extra}\n${url}`
+}
+
+// ------------------------------------------------------------------ defense + coach
+/** The defense's call for the next snap. Seeded per drive and play number, so the daily is the same for everyone. */
+export function defenseFor(d, difficulty = 0) {
+  const n = d.plays.filter((p) => p.playId !== 'timeout').length
+  return chooseDefense({ down: d.down, toGo: d.toGo, clock: d.clock, ballOn: d.ballOn }, rngFrom(`${d.id}|def|${n}`), difficulty)
+}
+
+const COACH = {
+  blitz: 'Blitz look, nobody deep! Take a Deep Shot or hit the Dig. Don\'t run into it.',
+  cover1: 'Man coverage. The Dig beats man, and the Deep Shot has a real chance.',
+  cover2: 'Two safeties deep. Attack the middle with the Dig, or take the Quick Out.',
+  cover3: 'Three-deep zone. The Dig and Quick Out are there; the deep ball is risky.',
+  prevent: 'Prevent D is giving you the short stuff. Quick Out or HB Dive. Avoid the deep ball.',
+}
+
+/** One line of advice for the current situation and the look the defense is showing. */
+export function coachTip(d, shown) {
+  const toGoal = 100 - d.ballOn
+  if (d.clockRunning && d.clock < 30 && toGoal > 15) return d.timeouts ? 'Clock is bleeding! Call a timeout or get out of bounds with the Quick Out.' : 'No timeouts left. The Quick Out stops the clock.'
+  if (d.down === 4) return `4th down, all or nothing. ${COACH[shown]}`
+  return COACH[shown]
 }
