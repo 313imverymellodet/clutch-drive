@@ -158,6 +158,7 @@ export function applyResult(d, playId, result) {
   next.clockRunning = result.kind === 'tackle' || result.kind === 'sack'
 
   if (next.down > 4) {
+    next.down = 4 // the scoreboard never shows a 5th down
     next.status = 'lost'
     next.reason = 'Turnover on downs.'
   } else if (clock <= 0) {
@@ -199,6 +200,11 @@ export function tendencies(d) {
   if (total) for (const k in share) share[k] /= total
   const last3 = calls.slice(-3).map((p) => p.playId)
   let key = null
+  // leaning on one play all drive also gets noticed
+  for (const play of Object.keys(share)) {
+    const n = calls.filter((p) => p.playId === play).length
+    if (n >= 4 && n / calls.length >= 0.5) key = { play, s: 0.8 }
+  }
   for (const play of Object.keys(share)) {
     const n = last3.filter((x) => x === play).length
     const streak = last3.length >= 2 && last3.at(-1) === play && last3.at(-2) === play

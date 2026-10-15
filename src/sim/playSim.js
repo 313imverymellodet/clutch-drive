@@ -60,6 +60,8 @@ export function chooseDefense({ down = 1, toGo = 10, clock = 120, ballOn = 25 } 
       for (const [cov, k] of Object.entries(COUNTERS[play] ?? {})) w[cov] += share * k * (0.9 + difficulty * 0.1)
     }
   }
+  // once they're keying on a play, commit to the coverage that kills it
+  if (tendency?.key) for (const [cov, k] of Object.entries(COUNTERS[tendency.key.play] ?? {})) w[cov] += tendency.key.s * k * 1.6
   if (clock < 50 && toGoal > 35) w.prevent += 0.35
   if (down >= 3 && toGo >= 7) (w.blitz += 0.18), (w.cover2 += 0.08)
   if (toGo <= 3) (w.blitz += 0.1), (w.cover1 += 0.15)
@@ -1021,9 +1023,11 @@ export class PlaySim {
       return incomplete(this.hurried ? `Incomplete! Rushed throw sails past #${r.number}` : `Incomplete! Overthrown, just past #${r.number}`)
     }
     // a deep ball hangs, so defenders in the area get a real shot at it
-    const reach = deep ? 2.8 : this.play.id === 'dig' ? 2.2 : 1.6
-    const pInt = THREE.MathUtils.clamp((reach * 0.55 - nd) / (reach * 0.55), 0, 1) * (deep ? 0.3 : 0.28) * (this.hurried ? 1.4 : 1)
-    const pBreak = THREE.MathUtils.clamp((reach - nd) / reach, 0, deep ? 0.65 : 0.55)
+    // a defense that guessed this play is sitting on it: bigger window to make a play on the ball
+    const keyed = this.key && this.key.play === this.play.id ? this.key.s : 0
+    const reach = (deep ? 2.8 : this.play.id === 'dig' ? 2.2 : 1.6) + keyed * 0.6
+    const pInt = THREE.MathUtils.clamp((reach * 0.55 - nd) / (reach * 0.55), 0, 1) * (deep ? 0.3 : 0.28) * (this.hurried ? 1.4 : 1) * (1 + keyed * 0.8)
+    const pBreak = THREE.MathUtils.clamp((reach - nd) / reach, 0, (deep ? 0.65 : 0.55) + keyed * 0.15)
     const roll = this.rng()
     if (roll < pInt) {
       b.state = 'held'
