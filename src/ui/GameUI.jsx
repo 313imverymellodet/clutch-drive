@@ -139,12 +139,19 @@ export function FieldBar({ drive, offense, defense }) {
 }
 
 /** The look the defense is showing, plus one line from the coach. */
-export function DefenseRead({ shown, tip }) {
+export function DefenseRead({ shown, tip, keyOn = null }) {
   const c = COVERAGES[shown]
   return (
     <div className="read">
-      <span className={`read-chip ${shown}`}>
-        <b>D</b> {c.short}
+      <span className="read-chips">
+        <span className={`read-chip ${shown}`}>
+          <b>D</b> {c.short}
+        </span>
+        {keyOn && keyOn.s >= 0.55 && (
+          <span className={`key-chip${keyOn.s >= 1 ? ' hot' : ''}`} title="The defense is anticipating this play">
+            👀 Keying: {PLAYS[keyOn.play].label}
+          </span>
+        )}
       </span>
       <span className="read-tip">🧢 {tip}</span>
     </div>

@@ -357,3 +357,11 @@ a { color: inherit; }
   .top .brand .title { display: none; }
   .icon-btn { width: 30px; height: 30px; font-size: 14px; }
 }
+
+/* ------------------------------------------------------------------ v3: adaptive defense */
+.read-chips { display: flex; gap: 6px; flex-wrap: wrap; flex: none; }
+.key-chip {
+  display: inline-flex; align-items: center; font-weight: 900; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 4px 9px; border-radius: 999px; background: #fff0c2; color: #7a5600; border: 1.5px solid #e0b100;
+}
+.key-chip.hot { background: #ffdcd9; color: #a3161a; border-color: var(--red); animation: pulse 1.2s ease-in-out infinite; }

@@ -39,10 +39,27 @@ export const COVERAGES = {
   prevent: { id: 'prevent', name: 'Prevent', read: 'Prevent shell: everybody deep, soft underneath', short: 'Prevent' },
 }
 
-/** Defensive coordinator: pick a coverage for the situation, and sometimes disguise it. */
-export function chooseDefense({ down = 1, toGo = 10, clock = 120, ballOn = 25 } = {}, rnd = Math.random, difficulty = 0) {
+// Which coverages take away each play (from the outcomes.mjs balance table).
+export const COUNTERS = {
+  out: { cover1: 1, cover2: 0.8, blitz: 0.6 },
+  dig: { cover2: 1, prevent: 0.7 },
+  deep: { cover2: 1, cover3: 1, prevent: 0.8 },
+  run: { blitz: 1, cover1: 0.9 },
+}
+
+/**
+ * Defensive coordinator: pick a coverage for the situation and the offense's tendencies, sometimes disguised.
+ * tendency: { share: { out, dig, deep, run } (recent, recency-weighted), key: { play, s } | null }
+ */
+export function chooseDefense({ down = 1, toGo = 10, clock = 120, ballOn = 25 } = {}, rnd = Math.random, difficulty = 0, tendency = null) {
   const toGoal = 100 - ballOn
   const w = { cover1: 0.24, cover2: 0.24, cover3: 0.3, blitz: 0.12, prevent: 0.1 }
+  // lean toward whatever stops what they keep calling
+  if (tendency?.share) {
+    for (const [play, share] of Object.entries(tendency.share)) {
+      for (const [cov, k] of Object.entries(COUNTERS[play] ?? {})) w[cov] += share * k * (0.9 + difficulty * 0.1)
+    }
+  }
   if (clock < 50 && toGoal > 35) w.prevent += 0.35
   if (down >= 3 && toGo >= 7) (w.blitz += 0.18), (w.cover2 += 0.08)
   if (toGo <= 3) (w.blitz += 0.1), (w.cover1 += 0.15)
@@ -59,7 +76,7 @@ export function chooseDefense({ down = 1, toGo = 10, clock = 120, ballOn = 25 } 
   }
   const disguise = { cover2: 'cover3', cover3: 'cover2', cover1: 'cover3', blitz: 'cover1', prevent: 'prevent' }
   const shown = rnd() < 0.12 + difficulty * 0.04 ? disguise[call] : call
-  return { call, shown }
+  return { call, shown, key: tendency?.key ?? null }
 }
 
 const V = (x, z) => new THREE.Vector3(x, 0, z)
@@ -201,6 +218,7 @@ export class PlaySim {
     }
     this.D = D
     this.assignDefense(this.coverage.call)
+    this.applyKey(this.coverage.key)
 
     if (this.play.type === 'pass') this.target = this[this.play.target]
 
@@ -235,6 +253,56 @@ export class PlaySim {
     for (const [k, a] of Object.entries(A)) D[k].assign = a
     if (call === 'prevent') D.DL3.assign = zone(5, 5) // three-man rush, edge drops
     for (const p of Object.values(D)) if (p.assign.type === 'rush' && p.role === 'LB') p.blitzer = true
+  }
+
+  /**
+   * The defense is keying on a play it expects (from tendencies, or a human defender's guess).
+   * Guess right: quicker reads, tighter coverage, and someone sits right where that play goes.
+   * Guess wrong: they're cheating out of position and a step slow.
+   */
+  applyKey(key) {
+    this.key = key && key.s > 0 ? key : null
+    if (!this.key) return
+    const { D } = this
+    const s = this.key.s
+    const hit = this.key.play === this.play.id
+    for (const p of Object.values(D)) {
+      if (hit) {
+        p.react = Math.max(0.04, p.react - 0.2 * s)
+        if (this.rng() < 0.35 * s) p.blanket = true
+      } else p.react += 0.12 * s
+    }
+    const zoneAt = (k, x, dz, deep = false) => {
+      const a = D[k].assign
+      if (a.type !== 'zone') return false
+      a.spot.set(x, 0, Math.min(END_LINE, this.los + dz))
+      a.deep = deep
+      return true
+    }
+    switch (this.key.play) {
+      case 'out': // sit on the flat to the slot side
+        if (!zoneAt('CBX', 17.5, 4) && !zoneAt('SS', 16, 4)) D.SS.blanket = true
+        break
+      case 'dig': // a robber in the dig window over the middle
+        if (!zoneAt('MLB', 4, 12)) zoneAt('FS', 4, 13)
+        zoneAt('SLB', 9, 11)
+        D.CBX.blanket = true
+        break
+      case 'deep': // everybody deeper, help over the top to the go side
+        zoneAt('FS', -10, 22, true) || zoneAt('SS', -9, 22, true)
+        if (D.CBZ.assign.type === 'man') D.CBZ.blanket = true
+        else zoneAt('CBZ', -15, 21, true)
+        break
+      case 'run': // load the box, no play-fake freeze, linemen fight off blocks
+        zoneAt('SS', 2, 5)
+        zoneAt('MLB', -0.5, 3.5)
+        for (const p of Object.values(D)) {
+          if (p.role === 'LB' && hit) p.react = 0.05
+          if (p.role === 'DL') p.shed -= 0.6 * s
+        }
+        break
+      default:
+    }
   }
 
   add(team, role, x, z, yaw, extra) {

@@ -317,7 +317,7 @@ export default function Game({ mode: rawMode }) {
             </div>
             <FieldBar drive={drive} offense={offense} defense={defense} />
             {drive.clockRunning && <div className="hurry">⏱ Clock is running, call it fast!</div>}
-            <DefenseRead shown={coverage.shown} tip={coachTip(drive, coverage.shown)} />
+            <DefenseRead shown={coverage.shown} keyOn={coverage.key} tip={coachTip(drive, coverage.shown, coverage.key)} />
             <PlayCards onCall={callPlay} onPreview={setPreview} />
           </div>
         )}

@@ -1,6 +1,6 @@
 import { NFL_TEAMS } from '../data/nflTeams'
 import { BRAND, LAUNCH_DATE } from '../brand'
-import { chooseDefense } from '../sim/playSim'
+import { PLAYS, chooseDefense } from '../sim/playSim'
 
 /*
  * The drive: game clock, downs, field position, score, win/lose.
@@ -180,10 +180,39 @@ export function shareText(d, { mode, day, streak, url }) {
 }
 
 // ------------------------------------------------------------------ defense + coach
+/**
+ * Scouting report on the offense this drive: recency-weighted share of each call, and the play the defense
+ * is keying on once you've leaned on it (2 of the last 3 calls, or the same call 3 times running).
+ * Plays that burned the defense get extra attention.
+ */
+export function tendencies(d) {
+  const calls = d.plays.filter((p) => PLAYS[p.playId])
+  const share = { out: 0, dig: 0, deep: 0, run: 0 }
+  let w = 1
+  let total = 0
+  for (let i = calls.length - 1; i >= 0 && i >= calls.length - 6; i--) {
+    const bonus = calls[i].first || calls[i].kind === 'touchdown' ? 1.4 : 1
+    share[calls[i].playId] += w * bonus
+    total += w * bonus
+    w *= 0.7
+  }
+  if (total) for (const k in share) share[k] /= total
+  const last3 = calls.slice(-3).map((p) => p.playId)
+  let key = null
+  for (const play of Object.keys(share)) {
+    const n = last3.filter((x) => x === play).length
+    const streak = last3.length >= 2 && last3.at(-1) === play && last3.at(-2) === play
+    if (n === 3) key = { play, s: 1 }
+    else if (streak) key = { play, s: 0.8 }
+    else if (n === 2) key = key ?? { play, s: 0.55 }
+  }
+  return { share, key, count: calls.length }
+}
+
 /** The defense's call for the next snap. Seeded per drive and play number, so the daily is the same for everyone. */
 export function defenseFor(d, difficulty = 0) {
   const n = d.plays.filter((p) => p.playId !== 'timeout').length
-  return chooseDefense({ down: d.down, toGo: d.toGo, clock: d.clock, ballOn: d.ballOn }, rngFrom(`${d.id}|def|${n}`), difficulty)
+  return chooseDefense({ down: d.down, toGo: d.toGo, clock: d.clock, ballOn: d.ballOn }, rngFrom(`${d.id}|def|${n}`), difficulty, tendencies(d))
 }
 
 const COACH = {
@@ -195,7 +224,13 @@ const COACH = {
 }
 
 /** One line of advice for the current situation and the look the defense is showing. */
-export function coachTip(d, shown) {
+export function coachTip(d, shown, key = null) {
+  if (key && key.s >= 0.55) {
+    const name = PLAYS[key.play].label
+    return key.s >= 1
+      ? `They've seen the ${name} all drive and they're sitting on it. Change it up!`
+      : `Careful: they're starting to key on the ${name}. Mix it up.`
+  }
   const toGoal = 100 - d.ballOn
   if (d.clockRunning && d.clock < 30 && toGoal > 15) return d.timeouts ? 'Clock is bleeding! Call a timeout or get out of bounds with the Quick Out.' : 'No timeouts left. The Quick Out stops the clock.'
   if (d.down === 4) return `4th down, all or nothing. ${COACH[shown]}`
