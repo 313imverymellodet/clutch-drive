@@ -429,3 +429,4 @@ a { color: inherit; }
   .room-code { font-size: 38px; }
 }
 .lobby-join.stacked { flex-direction: column; align-items: stretch; }
+.duel-strip .net.reconnecting { background: var(--red); animation: pulse 1s ease-in-out infinite; }

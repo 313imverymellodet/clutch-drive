@@ -41,10 +41,15 @@ export default function H2H({ room: roomParam }) {
   const [role, setRole] = useState(null)
   const [view, setView] = useState(null)
   const [clockEnds, setClockEnds] = useState(0)
+  const [net, setNet] = useState(null) // direct | relay | reconnecting
+  const [joinStep, setJoinStep] = useState(null) // searching | found | connected
   const chan = useRef(null)
   const roomRef = useRef(null)
   const matchRef = useRef(null) // host only: the full match (referee state)
   const teamRef = useRef(team)
+  const clockEndsRef = useRef(0)
+  const revRef = useRef(-1)
+  clockEndsRef.current = clockEnds
   const roleRef = useRef(null)
   teamRef.current = team
   roleRef.current = role
@@ -88,13 +93,18 @@ export default function H2H({ room: roomParam }) {
     try {
       roomRef.current = await hostRoom(c, {
         onGuest: (ch) => {
-          if (chan.current) return ch.close() // one opponent at a time
           chan.current = ch
+          const resend = () => {
+            const m = matchRef.current
+            if (m) ch.send({ t: 'state', m: viewFor(m, 'guest'), clockLeft: clockEndsRef.current ? clockEndsRef.current - Date.now() : 0 })
+          }
           ch.onMessage((msg) => {
-            if (msg.t === 'hello') startMatch(msg.team)
+            if (msg.t === 'hello') matchRef.current ? resend() : startMatch(msg.team)
+            else if (msg.t === 'sync') (!matchRef.current || msg.rev !== matchRef.current.rev) && resend()
             else if (msg.t === 'act') hostDispatch(msg.action, 'guest')
             else if (msg.t === 'rematch') rematch()
           })
+          ch.onStatus(setNet)
           ch.onClose(() => setPhase('left'))
         },
         onError: (m) => setError(m),
@@ -113,18 +123,22 @@ export default function H2H({ room: roomParam }) {
     setPhase('joining')
     setRole('guest')
     try {
-      const ch = await joinRoom(c, { onError: (m) => setError(m) })
+      const ch = await joinRoom(c, { onStatus: setJoinStep, hello: { team } })
       chan.current = ch
       roomRef.current = ch
+      let rev = -1
       ch.onMessage((msg) => {
-        if (msg.t === 'state') {
+        if (msg.t === 'state' && msg.m.rev >= rev) {
+          rev = msg.m.rev
+          revRef.current = rev
           setView(msg.m)
           setClockEnds(msg.clockLeft ? Date.now() + msg.clockLeft : 0)
           setPhase('playing')
         }
       })
+      ch.onStatus(setNet)
       ch.onClose(() => setPhase('left'))
-      ch.send({ t: 'hello', team })
+      ch.send({ t: 'sync', rev: -1 }) // the first state may have arrived before we were listening
     } catch (e) {
       setError(e.message)
       setPhase('lobby')
@@ -144,6 +158,13 @@ export default function H2H({ room: roomParam }) {
     const prev = matchRef.current
     startMatch(prev.players.guest.team, prev.order[0] === 'host' ? 'guest' : 'host')
   }
+
+  // guest: ask for a resync every few seconds (cheap; the host only resends if we're behind)
+  useEffect(() => {
+    if (role !== 'guest' || phase !== 'playing') return
+    const id = setInterval(() => chan.current?.send({ t: 'sync', rev: revRef.current }), 3000)
+    return () => clearInterval(id)
+  }, [role, phase])
 
   useEffect(() => () => {
     chan.current?.close()
@@ -166,7 +187,7 @@ export default function H2H({ room: roomParam }) {
   }, [role, view?.phase, view?.n, view?.half, hostDispatch]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (phase === 'playing' && view) {
-    return <Duel view={view} role={role} act={act} clockEnds={clockEnds} hostResult={(a) => role === 'host' && hostDispatch(a, 'ref')} onRematch={rematch} />
+    return <Duel view={view} role={role} act={act} clockEnds={clockEnds} net={net} hostResult={(a) => role === 'host' && hostDispatch(a, 'ref')} onRematch={rematch} />
   }
   return (
     <Lobby
@@ -179,11 +200,12 @@ export default function H2H({ room: roomParam }) {
       onCreate={create}
       onJoin={join}
       invited={!!roomParam}
+      joinStep={joinStep}
     />
   )
 }
 
-function Lobby({ phase, team, pickTeam, code, setCode, error, onCreate, onJoin, invited }) {
+function Lobby({ phase, team, pickTeam, code, setCode, error, onCreate, onJoin, invited, joinStep }) {
   const link = `${SITE}/h2h?room=${code}`
   const t = TEAM_BY_ABBR[team]
   return (
@@ -207,6 +229,7 @@ function Lobby({ phase, team, pickTeam, code, setCode, error, onCreate, onJoin, 
               <button className="btn" onClick={() => navigator.clipboard?.writeText(link)}>Copy link</button>
             </div>
             <p className="waiting"><span className="spinner" /> Waiting for your opponent…</p>
+            <p className="fine">On a phone? It's fine to switch apps to send the link. Just come back to this screen.</p>
           </div>
         ) : (
           <>
@@ -230,7 +253,7 @@ function Lobby({ phase, team, pickTeam, code, setCode, error, onCreate, onJoin, 
                 />
               </label>
               <button className={`btn ${invited ? 'primary big' : ''}`} onClick={onJoin} disabled={phase === 'joining'}>
-                {phase === 'joining' ? 'Connecting…' : invited ? 'Join the duel' : 'Join'}
+                {phase === 'joining' ? (joinStep === 'found' ? 'Found it! Connecting…' : 'Looking for the match…') : invited ? 'Join the duel' : 'Join'}
               </button>
             </div>
           </>
@@ -256,7 +279,7 @@ function useCountdown(ends) {
   return ends ? Math.max(0, ends - now) : 0
 }
 
-function Duel({ view: m, role, act, clockEnds, hostResult, onRematch }) {
+function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
   const [sim] = useState(() => new PlaySim())
   const [simKey, setSimKey] = useState(0)
   const [status, setStatus] = useState({ phase: 'presnap' })
@@ -363,6 +386,7 @@ function Duel({ view: m, role, act, clockEnds, hostResult, onRematch }) {
         <Scorebug drive={d} offense={offense} defense={defense} clock={m.phase === 'live' ? Math.max(0, d.clock - Math.max(0, sim.t - 0.35)) : d.clock} running={false} />
         <div className="duel-strip">
           <span className="duel-half">Drive {m.half + 1}/2</span>
+          {net && <NetBadge net={net} />}
           <span className={`duel-role ${iAmOffense ? 'off' : 'def'}`}>{iAmOffense ? 'You: OFFENSE' : 'You: DEFENSE'}</span>
           {m.summaries[0] && (
             <span className="duel-sum">
@@ -420,6 +444,11 @@ function Duel({ view: m, role, act, clockEnds, hostResult, onRematch }) {
       {m.phase === 'over' && <DuelOver m={m} role={role} onRematch={onRematch} offName={offName} />}
     </main>
   )
+}
+
+function NetBadge({ net }) {
+  const label = { direct: '🟢 Direct', relay: '🟡 Relay', reconnecting: '🔴 Reconnecting…', connecting: '⚪ Connecting' }[net] ?? net
+  return <span className={`net ${net}`} title="Connection to your opponent">{label}</span>
 }
 
 function ShotClock({ left }) {

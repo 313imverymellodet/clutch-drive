@@ -1,6 +1,8 @@
 // Two real browsers play a full head-to-head duel over the network (PeerJS), clicking the real UI.
 // Checks both screens show the same result for every snap. Saves screenshots of each stage.
 // Usage: npm run dev (other terminal), then  node scripts/h2h-e2e.mjs [outDir] [baseUrl]
+//   TRANSPORT=relay|direct  force one network path (relay = what two devices on different networks rely on)
+//   FLAKY=1                 host drops offline in the lobby, guest drops mid-game; both must recover
 import puppeteer from 'puppeteer-core'
 import { mkdirSync } from 'node:fs'
 
@@ -20,6 +22,11 @@ const guest = await ctxB.newPage()
 await host.setViewport({ width: 1100, height: 720 })
 await guest.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true })
 const errors = []
+if (process.env.TRANSPORT) {
+  for (const p of [host, guest]) await p.evaluateOnNewDocument((t) => localStorage.setItem('cd.transport', t), process.env.TRANSPORT)
+  console.log('forced transport:', process.env.TRANSPORT)
+}
+const FLAKY = !!process.env.FLAKY
 for (const [name, p] of [['host', host], ['guest', guest]]) {
   p.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
   p.on('console', (m) => m.type() === 'error' && !/favicon/.test(m.text()) && errors.push(`${name} console: ${m.text()}`))
@@ -42,6 +49,12 @@ const code = await host.$eval('.room-code', (el) => el.textContent)
 console.log('room code', code)
 await shot(host, 'host-lobby')
 
+if (FLAKY) {
+  console.log('host goes offline for 7s (like a phone backgrounded while sharing the link)')
+  await host.setOfflineMode(true)
+  await sleep(7000)
+  await host.setOfflineMode(false)
+}
 // --- guest joins through the invite link
 await guest.goto(`${BASE}/h2h?room=${code}`, { waitUntil: 'networkidle0' })
 await guest.select('.lobby select', 'DEN')
@@ -100,6 +113,14 @@ while (Date.now() < deadline) {
       const [a, b] = await Promise.all([host, guest].map((pp) => pp.evaluate(() => document.querySelector('.banner-sub')?.textContent ?? `[${document.querySelector('.modal h2')?.textContent}]`)))
       snaps++
       if (a !== b) mismatches++
+      if (FLAKY && snaps === 3) {
+        console.log('guest drops offline for 12s mid-game')
+        await guest.setOfflineMode(true)
+        await sleep(12000)
+        const badge = await guest.evaluate(() => document.querySelector('.net')?.textContent)
+        console.log('guest badge while offline:', badge)
+        await guest.setOfflineMode(false)
+      }
       console.log(`snap ${snaps}: ${name} called ${play} | host sees "${a}" | guest sees "${b}"${a === b ? '' : '  <-- MISMATCH'}`)
       if (snaps === 1) await Promise.all([shot(host, 'host-result'), shot(guest, 'guest-result')])
       await Promise.all([host.waitForSelector('.banner-sub', { hidden: true, timeout: 30000 }), guest.waitForSelector('.banner-sub', { hidden: true, timeout: 30000 })]).catch(() => {})
@@ -116,6 +137,7 @@ await Promise.all([shot(host, 'host-final'), shot(guest, 'guest-final')])
 const finals = await Promise.all([host, guest].map((p) => p.evaluate(() => document.querySelector('.modal')?.innerText.replace(/\n+/g, ' | '))))
 console.log('\nHOST  :', finals[0])
 console.log('GUEST :', finals[1])
-console.log(`\n${snaps} snaps, ${mismatches} mismatched results between the two screens`)
+const badges = await Promise.all([host, guest].map((p) => p.evaluate(() => document.querySelector('.net')?.textContent ?? '(modal)')))
+console.log(`\n${snaps} snaps, ${mismatches} mismatched results between the two screens; badges: host ${badges[0]}, guest ${badges[1]}`)
 console.log(errors.length ? 'ERRORS:\n' + errors.join('\n') : 'no page errors')
 await browser.close()

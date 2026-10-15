@@ -44,11 +44,15 @@ The defense is a real opponent (`src/sim/playSim.js`):
 
 ## Online head-to-head
 
-- **Transport** (`src/net/room.js`): a direct browser-to-browser WebRTC data channel via PeerJS. The host registers a peer id from a 5-letter room code; PeerJS's free public broker only introduces the two browsers. No accounts and no game server.
+- **Transport** (`src/net/room.js`): every message goes out on every path that's up, and the receiver de-duplicates:
+  - **Direct:** a WebRTC data channel via PeerJS. Fastest, but between two devices on different networks it often can't connect, because the public TURN relays (including PeerJS's own) don't work.
+  - **Relay:** MQTT over secure WebSockets through two independent public brokers (EMQX and Mosquitto). This works on any network that allows normal web traffic, so phones on cellular and home or office Wi-Fi all connect.
+  - **Lobby and recovery:** the host publishes a retained "room open" marker, so a wrong code fails fast with a clear message. Both paths reconnect on their own: a phone host can switch apps to share the link, and a guest who drops mid-game resyncs. The duel screen shows 🟢 Direct, 🟡 Relay or 🔴 Reconnecting.
+  - **Testing knob:** set `localStorage['cd.transport']` to `relay` or `direct` to force one path.
 - **Referee** (`src/game/h2h.js`): pure match rules. The host's browser applies both players' actions and sends each side only what it may see (the offense never sees the real coverage or the defense's guess before the snap).
 - **Sync:** each snap carries a seed, so both browsers run the identical deterministic play. The host's result is official. Shot clocks are 15 seconds; if one runs out, the CPU calls it.
-- **Known limit:** without a TURN relay, a small share of network pairs (some strict corporate or mobile NATs) can't connect browser-to-browser.
-- **Tests:** `node scripts/h2h-selfplay.mjs` plays full duels through the rules, and `node scripts/h2h-e2e.mjs <dir> [baseUrl]` has two real browsers play each other over the network and checks that both screens match.
+- **Known limit:** networks that block WebSockets on ports 8084 and 8081 (some locked-down corporate Wi-Fi) fall back to direct only. A paid relay on port 443 would close that gap.
+- **Tests:** `node scripts/h2h-selfplay.mjs` plays full duels through the rules, and `node scripts/h2h-e2e.mjs <dir> [baseUrl]` has two real browsers play each other over the network and checks that both screens match. Add `TRANSPORT=relay` to simulate two devices on different networks, and `FLAKY=1` to drop the host in the lobby and the guest mid-game.
 
 ## Character pipeline
 
