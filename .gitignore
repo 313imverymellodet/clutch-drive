@@ -7,3 +7,4 @@ blender/preview
 .env*.local
 .DS_Store
 .claude
+.env*

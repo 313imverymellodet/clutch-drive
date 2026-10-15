@@ -44,13 +44,10 @@ npm run model:preview   # also render PNG previews to blender/preview/
 
 ## Deploy
 
-The site is a static Vite build on Vercel (`vercel.json` rewrites every route to `index.html`).
-Set `VITE_SITE_URL` (in the Vercel project settings, or in `.env.production`) to the public URL so the social preview image link is absolute.
+Live at **https://clutch-drive.vercel.app**. The Vercel project is connected to this GitHub repo, so every push to `main` deploys to production automatically (other branches get preview URLs).
+It's a static Vite build; `vercel.json` rewrites every route to `index.html`. `.env.production` sets `VITE_SITE_URL` so the social preview image link is absolute.
 
-```bash
-npm run build
-npx vercel --prod
-```
+Manual deploy, if ever needed: `npx vercel deploy --prod`.
 
 ## Code map
 
