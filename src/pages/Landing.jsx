@@ -27,6 +27,7 @@ export default function Landing() {
         </Link>
         <div className="land-links">
           <Link to="/play?mode=survivor">Survivor</Link>
+          <Link to="/h2h">Head-to-Head</Link>
           <Link to="/locker">Locker Room</Link>
           <Link to="/play?mode=daily" className="btn primary small">Play</Link>
         </div>
@@ -60,7 +61,7 @@ export default function Landing() {
             <Link to="/play?mode=daily" className="btn primary big">
               {played ? "See today's result" : "Play today's drive"}
             </Link>
-            <Link to="/play?mode=survivor" className="btn big">Survivor mode</Link>
+            <Link to="/h2h" className="btn big">⚔️ Duel a friend</Link>
           </div>
           <p className="hero-fine">Free · no download · about 60 seconds a game</p>
         </div>
@@ -102,6 +103,11 @@ export default function Landing() {
           <span className="mode-emoji">🔥</span>
           <h3>Survivor</h3>
           <p>Win to stay alive. Each game gets harder.{surv.best ? ` Your best: ${surv.best}.` : ''}</p>
+        </Link>
+        <Link to="/h2h" className="mode-card h2h">
+          <span className="mode-emoji">⚔️</span>
+          <h3>Head-to-Head</h3>
+          <p>Send a link. You call their defense, they call yours. Disguise it, guess their play, out-scheme your friend.</p>
         </Link>
         <Link to="/play?mode=practice" className="mode-card practice">
           <span className="mode-emoji">🏟️</span>

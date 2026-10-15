@@ -6,6 +6,7 @@ You're trailing late in the 4th with the clock running. Call the plays and win i
 - **Daily Drive** (`/play?mode=daily`): the same scenario and same play outcomes for everyone each day, with a Wordle-style emoji result to share.
 - **Survivor** (`/play?mode=survivor`): win to stay alive; each game gets harder. Best streak is saved.
 - **Practice** (`/play?mode=practice`): pick any two of the 32 teams and run drives as often as you like.
+- **Head-to-Head** (`/h2h`): duel a friend online. Create a match, send the link, and each of you gets one drive from the same late-game spot. On every snap the defense locks in a coverage (it can disguise its look and guess the play), then the offense reads the look and calls a play. Best drive wins.
 - **Locker Room** (`/locker`): every animation in any uniform.
 
 The name lives in `src/brand.js`, so a rename is a one-line change.
@@ -37,7 +38,17 @@ The defense is a real opponent (`src/sim/playSim.js`):
 - **Pass rush:** blockers pair up with rushers; rushers win their reps after a random time, and a free rusher shoots a gap. The QB senses pressure and throws early (less accurate), or gets sacked. If the defense shows blitz, the back and tight end stay in to block.
 - **After the catch:** the carrier scores a fan of directions for open space, defenders take intercept angles, teammates peel off to block, and tackles can be broken (especially arm tackles from behind).
 
+- **It adapts to you:** the coordinator scouts your recent calls (weighted toward recent plays and the ones that burned it) and leans toward coverages that stop them. Call the same play 2 of 3 snaps and it starts **keying** on it: quicker reads, tighter coverage, and a defender sitting in that play's window. A wrong key leaves them a step slow, so mixing it up after a streak pays off. `node scripts/spam.mjs` measures both effects.
+
 `node scripts/outcomes.mjs` prints the balance table of every play against every coverage. Roughly: Dig beats man and Cover 3; Quick Out beats zones and stops the clock; Deep Shot beats the blitz and Cover 1 but gets picked off against Prevent and two-deep zones; HB Dive works against zones and gets stuffed by the blitz.
+
+## Online head-to-head
+
+- **Transport** (`src/net/room.js`): a direct browser-to-browser WebRTC data channel via PeerJS. The host registers a peer id from a 5-letter room code; PeerJS's free public broker only introduces the two browsers. No accounts and no game server.
+- **Referee** (`src/game/h2h.js`): pure match rules. The host's browser applies both players' actions and sends each side only what it may see (the offense never sees the real coverage or the defense's guess before the snap).
+- **Sync:** each snap carries a seed, so both browsers run the identical deterministic play. The host's result is official. Shot clocks are 15 seconds; if one runs out, the CPU calls it.
+- **Known limit:** without a TURN relay, a small share of network pairs (some strict corporate or mobile NATs) can't connect browser-to-browser.
+- **Tests:** `node scripts/h2h-selfplay.mjs` plays full duels through the rules, and `node scripts/h2h-e2e.mjs <dir> [baseUrl]` has two real browsers play each other over the network and checks that both screens match.
 
 ## Character pipeline
 
@@ -70,6 +81,7 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | `src/game/drive.js` | Drive rules: clock, downs, field position, score, daily/survivor scenarios, defensive call per snap, coach tips, share text |
 | `src/game/sound.js` | Synthesized WebAudio sound effects (whistle, hits, catches, crowd) and mute |
 | `src/components/RouteArt.jsx` | Pre-snap route preview drawn on the turf |
+| `src/pages/H2H.jsx`, `src/game/h2h.js`, `src/net/room.js` | Head-to-head lobby and duel screen, match rules, peer-to-peer transport |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |
