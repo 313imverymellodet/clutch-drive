@@ -112,7 +112,8 @@ while (Date.now() < deadline) {
       await sleep(600)
       const [a, b] = await Promise.all([host, guest].map((pp) => pp.evaluate(() => document.querySelector('.banner-sub')?.textContent ?? `[${document.querySelector('.modal h2')?.textContent}]`)))
       snaps++
-      if (a !== b) mismatches++
+      const bothOver = a.startsWith('[') && b.startsWith('[') // both on the end-of-drive/duel screen (personalized text)
+      if (a !== b && !bothOver) mismatches++
       if (FLAKY && snaps === 3) {
         console.log('guest drops offline for 12s mid-game')
         await guest.setOfflineMode(true)
@@ -121,7 +122,7 @@ while (Date.now() < deadline) {
         console.log('guest badge while offline:', badge)
         await guest.setOfflineMode(false)
       }
-      console.log(`snap ${snaps}: ${name} called ${play} | host sees "${a}" | guest sees "${b}"${a === b ? '' : '  <-- MISMATCH'}`)
+      console.log(`snap ${snaps}: ${name} called ${play} | host sees "${a}" | guest sees "${b}"${a === b || bothOver ? '' : '  <-- MISMATCH'}`)
       if (snaps === 1) await Promise.all([shot(host, 'host-result'), shot(guest, 'guest-result')])
       await Promise.all([host.waitForSelector('.banner-sub', { hidden: true, timeout: 30000 }), guest.waitForSelector('.banner-sub', { hidden: true, timeout: 30000 })]).catch(() => {})
       await Promise.all([host, guest].map((pp) => pp.waitForFunction(() => !/Drive 1 is done/.test(document.querySelector('.modal h2')?.textContent ?? ''), { timeout: 30000 }).catch(() => {})))

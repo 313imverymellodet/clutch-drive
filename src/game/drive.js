@@ -1,6 +1,7 @@
 import { NFL_TEAMS } from '../data/nflTeams'
 import { BRAND, LAUNCH_DATE } from '../brand'
 import { PLAYS, chooseDefense } from '../sim/playSim'
+import { FAMILIES } from '../sim/playbook'
 
 /*
  * The drive: game clock, downs, field position, score, win/lose.
@@ -182,37 +183,43 @@ export function shareText(d, { mode, day, streak, url }) {
 
 // ------------------------------------------------------------------ defense + coach
 /**
- * Scouting report on the offense this drive: recency-weighted share of each call, and the play the defense
- * is keying on once you've leaned on it (2 of the last 3 calls, or the same call 3 times running).
- * Plays that burned the defense get extra attention.
+ * Scouting report on the offense this drive, by concept family (quick / mid / deep / run):
+ * recency-weighted share of calls (plays that burned the defense count extra), the family the defense
+ * is keying on once you lean on it, and `exploit`: how often you've been winning lately. An offense that
+ * keeps beating the looks it sees gets disguised against more.
  */
 export function tendencies(d) {
   const calls = d.plays.filter((p) => PLAYS[p.playId])
-  const share = { out: 0, dig: 0, deep: 0, run: 0 }
+  const share = { quick: 0, mid: 0, deep: 0, run: 0 }
   let w = 1
   let total = 0
   for (let i = calls.length - 1; i >= 0 && i >= calls.length - 6; i--) {
     const bonus = calls[i].first || calls[i].kind === 'touchdown' ? 1.4 : 1
-    share[calls[i].playId] += w * bonus
+    share[PLAYS[calls[i].playId].family] += w * bonus
     total += w * bonus
     w *= 0.7
   }
   if (total) for (const k in share) share[k] /= total
-  const last3 = calls.slice(-3).map((p) => p.playId)
+  const fam = (p) => PLAYS[p.playId].family
+  const last3 = calls.slice(-3)
   let key = null
-  // leaning on one play all drive also gets noticed
-  for (const play of Object.keys(share)) {
-    const n = calls.filter((p) => p.playId === play).length
-    if (n >= 4 && n / calls.length >= 0.5) key = { play, s: 0.8 }
+  for (const f of Object.keys(share)) {
+    const n = last3.filter((p) => fam(p) === f).length
+    const streak = last3.length >= 2 && fam(last3.at(-1)) === f && fam(last3.at(-2)) === f
+    // the exact same play twice in a row is even easier to sit on
+    const samePlay = streak && last3.at(-1).playId === last3.at(-2).playId
+    if (n === 3) key = { family: f, s: 1, play: last3.at(-1).playId }
+    else if (streak) key = { family: f, s: samePlay ? 0.9 : 0.7, play: last3.at(-1).playId }
+    else if (n === 2) key = key ?? { family: f, s: 0.5, play: last3.at(-1).playId }
   }
-  for (const play of Object.keys(share)) {
-    const n = last3.filter((x) => x === play).length
-    const streak = last3.length >= 2 && last3.at(-1) === play && last3.at(-2) === play
-    if (n === 3) key = { play, s: 1 }
-    else if (streak) key = { play, s: 0.8 }
-    else if (n === 2) key = key ?? { play, s: 0.55 }
+  for (const f of Object.keys(share)) {
+    const n = calls.filter((p) => fam(p) === f).length
+    if (!key && n >= 4 && n / calls.length >= 0.6) key = { family: f, s: 0.7, play: calls.at(-1).playId }
   }
-  return { share, key, count: calls.length }
+  const recent = calls.slice(-4)
+  const wins = recent.filter((p) => p.first || p.kind === 'touchdown' || p.gain >= 8).length
+  const exploit = recent.length >= 2 ? wins / recent.length : 0
+  return { share, key, exploit, count: calls.length }
 }
 
 /** The defense's call for the next snap. Seeded per drive and play number, so the daily is the same for everyone. */
@@ -222,23 +229,26 @@ export function defenseFor(d, difficulty = 0) {
 }
 
 const COACH = {
-  blitz: 'Blitz look, nobody deep! Take a Deep Shot or hit the Dig. Don\'t run into it.',
-  cover1: 'Man coverage. The Dig beats man, and the Deep Shot has a real chance.',
-  cover2: 'Two safeties deep. Attack the middle with the Dig, or take the Quick Out.',
-  cover3: 'Three-deep zone. The Dig and Quick Out are there; the deep ball is risky.',
-  prevent: 'Prevent D is giving you the short stuff. Quick Out or HB Dive. Avoid the deep ball.',
+  blitz: 'Blitz look, nobody deep! Get it out quick (Slant-Flat, Quick Out) or take a shot. Don\'t run into it.',
+  cover1: 'Man coverage. Mesh, Slant-Flat and the Dig beat man; the deep ball has a chance.',
+  cover2: 'Two safeties deep. Smash, Levels and the Dig attack the holes; runs work too.',
+  tampa2: 'Two-deep look with a linebacker in the middle. Hit the sidelines: Smash, Curl-Flat, Flood.',
+  cover3: 'Single-high. Flood and Curl-Flat stress the flats; the seams are open in Four Verts.',
+  cover4: 'Quarters: four deep. Take the underneath stuff (Stick, Hitches, Mesh) or run it.',
+  firezone: 'Pressure look. Hot throws win: Slant-Flat, Stick, Quick Out, or a Draw.',
+  prevent: 'Prevent D is giving you the short stuff. Hitches, Curl-Flat or a run. Avoid the deep ball.',
 }
 
 /** One line of advice for the current situation and the look the defense is showing. */
 export function coachTip(d, shown, key = null) {
-  if (key && key.s >= 0.55) {
-    const name = PLAYS[key.play].label
+  if (key && key.s >= 0.5) {
+    const fam = FAMILIES[key.family]?.label.toLowerCase() ?? 'that'
     return key.s >= 1
-      ? `They've seen the ${name} all drive and they're sitting on it. Change it up!`
-      : `Careful: they're starting to key on the ${name}. Mix it up.`
+      ? `They've seen ${fam} plays all drive and they're sitting on them. Change it up!`
+      : `Careful: they're starting to key on your ${fam} game. Mix it up.`
   }
   const toGoal = 100 - d.ballOn
   if (d.clockRunning && d.clock < 30 && toGoal > 15) return d.timeouts ? 'Clock is bleeding! Call a timeout or get out of bounds with the Quick Out.' : 'No timeouts left. The Quick Out stops the clock.'
-  if (d.down === 4) return `4th down, all or nothing. ${COACH[shown]}`
-  return COACH[shown]
+  if (d.down === 4) return `4th down, all or nothing. ${COACH[shown] ?? ""}`
+  return COACH[shown] ?? ''
 }

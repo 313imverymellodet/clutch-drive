@@ -1,72 +1,88 @@
 import * as THREE from 'three'
 import { THROW_RELEASE } from '../three/characters'
+import { PLAYBOOK, eligibleFor } from './playbook'
+import COUNTER_DATA from './counters.json'
 
 /*
  * Play simulation. Units are yards: x = sideline to sideline, z = downfield; offense drives toward +z.
  * The sim decides positions, facing and which clip each player is in; PlayScene draws it.
- * Stepped with a fixed dt and a seed, a play is fully repeatable, which is what makes instant replay work.
+ * Stepped with a fixed dt and a seed, a play is fully repeatable (instant replay, head-to-head sync).
  *
  * Football AI in here:
- *  - Defense calls a coverage (chooseDefense) and may disguise it pre-snap.
- *  - Man defenders trail receivers; zone defenders drop to landmarks, shade receivers in their area,
- *    and break on the ball once it's thrown.
- *  - Pass rush vs. pass protection: blockers pick up rushers; each rusher beats his block after a while.
- *    Unblocked or winning rushers hurry the QB (early throw) or sack him.
- *  - After the catch: the carrier scores candidate directions for open space; defenders take intercept
- *    angles; teammates peel off to block the nearest pursuers.
+ *  - Offense runs a playbook concept (src/sim/playbook.js). On pass plays the QB works the read
+ *    progression after the snap: throws to the first open receiver, moves on if covered, checks down,
+ *    and scrambles or throws it away under pressure.
+ *  - Defense calls one of 8 coverages and shows a pre-snap shell that may be a disguise; it rotates
+ *    into the real coverage at the snap. It keys on the offense's tendencies (by concept family).
+ *  - Man defenders read receivers a beat late; zones drop, squeeze, and break on the ball.
+ *  - Pass protection pairs blockers with rushers; rushers win their reps; free rushers hurry or sack.
+ *  - After the catch: open-space ball carrier AI, intercept-angle pursuit, downfield blocking.
  */
 
 export const LOS = -25 // default line of scrimmage: own 25 (z = yard line from own goal - 50)
 export const FIRST_DOWN = LOS + 10
 export const FIXED_DT = 1 / 60
-const END_LINE = 58.5 // keep routes and zones inside the back of the end zone
+const END_LINE = 58.5
 const SIDELINE = 26.2
 const GOAL_LINE = 50
-const HOLE_X = -0.8 // the A gap the HB Dive aims for
 
-export const PLAYS = {
-  out: { id: 'out', label: 'Quick Out', detail: 'Pass · slot to the sideline', type: 'pass', target: 'slot', throwAt: 0.8, drop: 3.0, toSideline: true },
-  dig: { id: 'dig', label: 'Dig', detail: 'Pass · WR1 over the middle', type: 'pass', target: 'x', throwAt: 1.55, drop: 7.3 },
-  deep: { id: 'deep', label: 'Deep Shot', detail: 'Pass · WR2 go route', type: 'pass', target: 'z', throwAt: 1.85, drop: 7.6 },
-  run: { id: 'run', label: 'HB Dive', detail: 'Run · handoff up the gut', type: 'run' },
-}
+// Plays: the playbook entries plus derived fields the rest of the app uses.
+export const PLAYS = Object.fromEntries(
+  Object.entries(PLAYBOOK).map(([id, p]) => [id, { ...p, id, type: p.run ? 'run' : 'pass', detail: p.desc }]),
+)
 
 export const COVERAGES = {
-  cover1: { id: 'cover1', name: 'Cover 1', read: 'Man coverage, one safety deep', short: 'Man, single-high' },
-  cover2: { id: 'cover2', name: 'Cover 2', read: 'Two safeties deep, corners sitting in the flats', short: 'Two-high zone' },
-  cover3: { id: 'cover3', name: 'Cover 3', read: 'Single-high zone, corners bailing deep', short: 'Three-deep zone' },
-  blitz: { id: 'blitz', name: 'Cover 0 Blitz', read: 'Blitz! Six rushing and nobody deep', short: 'All-out blitz' },
-  prevent: { id: 'prevent', name: 'Prevent', read: 'Prevent shell: everybody deep, soft underneath', short: 'Prevent' },
+  cover1: { id: 'cover1', name: 'Cover 1', short: 'Man, single-high', shell: 'one', blurb: 'Man-to-man with a free safety. Tight on quick throws.' },
+  cover2: { id: 'cover2', name: 'Cover 2', short: 'Two-deep zone', shell: 'two', blurb: 'Two deep halves, corners squat the flats.' },
+  tampa2: { id: 'tampa2', name: 'Tampa 2', short: 'Tampa 2', shell: 'two', blurb: 'Cover 2 with the linebacker running the deep middle.' },
+  cover3: { id: 'cover3', name: 'Cover 3', short: 'Three-deep zone', shell: 'one', blurb: 'Three deep, four under. Sound against everything.' },
+  cover4: { id: 'cover4', name: 'Cover 4', short: 'Quarters', shell: 'two', blurb: 'Four deep quarters. Kills deep shots, soft underneath.' },
+  firezone: { id: 'firezone', name: 'Fire Zone', short: 'Zone blitz', shell: 'one', blurb: 'Send five, drop a lineman into coverage. Confuses the QB.' },
+  blitz: { id: 'blitz', name: 'Cover 0 Blitz', short: 'All-out blitz', shell: 'zero', blurb: 'Send six, nobody deep. Huge risk, huge reward.' },
+  prevent: { id: 'prevent', name: 'Prevent', short: 'Prevent', shell: 'two', blurb: 'Everyone deep. Gives up short stuff, never the big play.' },
+}
+export const COVERAGE_IDS = Object.keys(COVERAGES)
+
+// Which coverages stop each concept family (generated by scripts/outcomes.mjs --write; defaults if missing).
+export const COUNTERS = COUNTER_DATA?.counters ?? {
+  quick: { cover1: 1, cover2: 0.8, blitz: 0.4 },
+  mid: { cover2: 0.8, tampa2: 1, cover4: 0.6 },
+  deep: { cover4: 1, cover2: 0.8, prevent: 0.8 },
+  run: { blitz: 1, cover1: 0.8, firezone: 0.7 },
 }
 
-// Which coverages take away each play (from the outcomes.mjs balance table).
-export const COUNTERS = {
-  out: { cover1: 1, cover2: 0.8, blitz: 0.6 },
-  dig: { cover2: 1, prevent: 0.7 },
-  deep: { cover2: 1, cover3: 1, prevent: 0.8 },
-  run: { blitz: 1, cover1: 0.9 },
+const DISGUISE = {
+  cover1: ['cover2', 'cover4'],
+  cover3: ['cover2', 'cover4', 'tampa2'],
+  firezone: ['cover2', 'cover4', 'cover3'],
+  cover2: ['cover3', 'cover1'],
+  tampa2: ['cover3', 'cover2'],
+  cover4: ['cover3', 'cover2'],
+  blitz: ['cover1', 'cover3'],
+  prevent: ['cover4'],
 }
 
 /**
- * Defensive coordinator: pick a coverage for the situation and the offense's tendencies, sometimes disguised.
- * tendency: { share: { out, dig, deep, run } (recent, recency-weighted), key: { play, s } | null }
+ * Defensive coordinator: pick a coverage for the situation and the offense's tendencies, then decide
+ * what to show. Offenses that keep beating the look they see get disguised against more.
+ * tendency: { share: {family: 0..1}, key: { family, s, play } | null, exploit: 0..1 }
  */
 export function chooseDefense({ down = 1, toGo = 10, clock = 120, ballOn = 25 } = {}, rnd = Math.random, difficulty = 0, tendency = null) {
   const toGoal = 100 - ballOn
-  const w = { cover1: 0.24, cover2: 0.24, cover3: 0.3, blitz: 0.12, prevent: 0.1 }
-  // lean toward whatever stops what they keep calling
+  const w = { cover1: 0.18, cover2: 0.16, tampa2: 0.1, cover3: 0.22, cover4: 0.1, firezone: 0.08, blitz: 0.09, prevent: 0.07 }
+  if (clock < 50 && toGoal > 35) (w.prevent += 0.3), (w.cover4 += 0.15)
+  if (down >= 3 && toGo >= 7) (w.blitz += 0.12), (w.firezone += 0.12), (w.cover2 += 0.05)
+  if (toGo <= 3) (w.blitz += 0.1), (w.cover1 += 0.12), (w.firezone += 0.06)
+  if (toGoal <= 15) (w.prevent = 0), (w.cover4 = 0.04), (w.blitz += 0.12), (w.cover1 += 0.18), (w.cover3 -= 0.08)
+  w.blitz += difficulty * 0.02
+  w.firezone += difficulty * 0.02
   if (tendency?.share) {
-    for (const [play, share] of Object.entries(tendency.share)) {
-      for (const [cov, k] of Object.entries(COUNTERS[play] ?? {})) w[cov] += share * k * (0.9 + difficulty * 0.1)
+    for (const [fam, share] of Object.entries(tendency.share)) {
+      for (const [cov, k] of Object.entries(COUNTERS[fam] ?? {})) w[cov] += share * k * (0.8 + difficulty * 0.1)
     }
   }
-  // once they're keying on a play, commit to the coverage that kills it
-  if (tendency?.key) for (const [cov, k] of Object.entries(COUNTERS[tendency.key.play] ?? {})) w[cov] += tendency.key.s * k * 1.6
-  if (clock < 50 && toGoal > 35) w.prevent += 0.35
-  if (down >= 3 && toGo >= 7) (w.blitz += 0.18), (w.cover2 += 0.08)
-  if (toGo <= 3) (w.blitz += 0.1), (w.cover1 += 0.15)
-  if (toGoal <= 15) (w.prevent = 0), (w.blitz += 0.15), (w.cover1 += 0.2), (w.cover3 -= 0.1)
-  w.blitz += difficulty * 0.03
+  if (tendency?.key) for (const [cov, k] of Object.entries(COUNTERS[tendency.key.family] ?? {})) w[cov] += tendency.key.s * k * 1.4
+  for (const k in w) w[k] = Math.max(0, w[k])
   const total = Object.values(w).reduce((a, b) => a + b, 0)
   let r = rnd() * total
   let call = 'cover3'
@@ -76,8 +92,9 @@ export function chooseDefense({ down = 1, toGo = 10, clock = 120, ballOn = 25 } 
       break
     }
   }
-  const disguise = { cover2: 'cover3', cover3: 'cover2', cover1: 'cover3', blitz: 'cover1', prevent: 'prevent' }
-  const shown = rnd() < 0.12 + difficulty * 0.04 ? disguise[call] : call
+  const pDisguise = Math.min(0.75, 0.28 + difficulty * 0.04 + (tendency?.exploit ?? 0) * 0.4)
+  const options = DISGUISE[call]
+  const shown = rnd() < pDisguise ? options[Math.floor(rnd() * options.length)] : call
   return { call, shown, key: tendency?.key ?? null }
 }
 
@@ -85,10 +102,11 @@ const V = (x, z) => new THREE.Vector3(x, 0, z)
 const tmp = new THREE.Vector3()
 const tmp2 = new THREE.Vector3()
 const tmp3 = new THREE.Vector3()
+const tmp4 = new THREE.Vector3()
 
 const SNAP_TIME = 0.35
-const BALL_SPEED = 22 // short and intermediate throws
-const DEEP_BALL_SPEED = 17 // more air under the deep ball
+const BALL_SPEED = 22
+const DEEP_BALL_SPEED = 17
 const ballSpeed = (dist) => (dist > 24 ? DEEP_BALL_SPEED : BALL_SPEED)
 
 function mulberry32(a) {
@@ -101,7 +119,6 @@ function mulberry32(a) {
   }
 }
 
-/** Position along a polyline after travelling `dist` yards (clamped to the end). */
 function alongRoute(pts, dist, out) {
   for (let i = 1; i < pts.length; i++) {
     const seg = pts[i].distanceTo(pts[i - 1])
@@ -111,11 +128,16 @@ function alongRoute(pts, dist, out) {
   return out.copy(pts[pts.length - 1])
 }
 
-/** Distance covered after t seconds with a short acceleration ramp. */
 function routeDistance(t, speed, accel = 0.55) {
   if (t <= 0) return 0
   if (t < accel) return (speed * t * t) / (2 * accel)
   return speed * (t - accel / 2)
+}
+
+/** Inverse of routeDistance: seconds to cover `d` yards. */
+function routeTime(d, speed, accel = 0.55) {
+  if (d <= (speed * accel) / 2) return Math.sqrt((2 * d * accel) / speed)
+  return d / speed + accel / 2
 }
 
 function angleLerp(a, b, k) {
@@ -128,26 +150,28 @@ const isDefBack = (p) => p.role === 'CB' || p.role === 'S' || p.role === 'LB'
 
 export class PlaySim {
   constructor() {
-    this.timeScale = 1 // < 1 for slow motion
-    this.camMode = 'broadcast' // broadcast | close
+    this.timeScale = 1
+    this.camMode = 'broadcast'
     this.reset()
   }
 
   /**
-   * los: line of scrimmage in field z; toGo: yards for a first down.
-   * coverage: { call, shown } from chooseDefense (defaults to Cover 3). situation: { clock } for clock-aware AI.
+   * play: playbook id. reads: receiver keys in progression order (defaults to the play's).
+   * flip: mirror the formation and play to the other side. coverage: { call, shown, key }.
+   * situation: { clock } for clock-aware AI.
    */
-  reset({ play = 'dig', seed = 1, los = LOS, toGo = 10, coverage = null, situation = {}, difficulty = 0 } = {}) {
+  reset({ play = 'dig', seed = 1, los = LOS, toGo = 10, coverage = null, situation = {}, difficulty = 0, reads = null, flip = false } = {}) {
     this.los = los
     this.firstDown = Math.min(los + toGo, GOAL_LINE)
-    this.play = PLAYS[play]
+    this.play = PLAYS[play] ?? PLAYS.dig
     this.seed = seed
     this.rng = mulberry32(seed)
     this.coverage = coverage ?? { call: 'cover3', shown: 'cover3' }
     this.situation = situation
     this.difficulty = difficulty
+    this.flip = flip ? -1 : 1
     this.t = 0
-    this.phase = 'presnap' // presnap | live | dead | over
+    this.phase = 'presnap'
     this.players = []
     this.events = []
     this.message = null
@@ -155,20 +179,24 @@ export class PlaySim {
     this.catchTime = Infinity
     this.deadTime = Infinity
     this.tackleTime = Infinity
-    this.throwAt = this.play.throwAt ?? Infinity
+    this.throwAt = Infinity
     this.hurried = false
+    this.pressured = false
     this.carrier = null
     this.tackler = null
     this.interceptor = null
     this.aim = null
     this.target = null
+    this.readIdx = 0
+    this.how = null
 
     const r = (a, b) => a + (b - a) * this.rng()
     this.r = r
+    const pb = this.play
+    const isRun = this.play.type === 'run'
     const route = (pts) => pts.map(([x, z]) => V(x, Math.min(END_LINE, this.los + z)))
     const off = (role, x, dz, extra = {}) => this.add('off', role, x, this.los + dz, 0, extra)
     const def = (role, x, dz, extra = {}) => this.add('def', role, x, this.los + dz, Math.PI, extra)
-    const isRun = this.play.type === 'run'
 
     // ------------------------------------------------ offense
     this.center = off('C', 0, -0.9, { number: 55, anim: 'Block' })
@@ -176,21 +204,43 @@ export class PlaySim {
     off('OL', -1.6, -1.0, { number: 67, anim: 'Stance' })
     off('OL', 3.2, -1.2, { number: 71, anim: 'Stance' })
     off('OL', -3.2, -1.2, { number: 75, anim: 'Stance' })
-    this.qb = off('QB', 0, -5, { number: 8, anim: 'Idle', feel: r(0.08, 0.3) }) // feel = how fast he senses the rush
-    this.rb = off('RB', 1.6, -5, {
-      number: 22,
-      anim: 'Stance',
-      ...(isRun
-        ? { route: route([[1.6, -5], [0.5, -4.4], [HOLE_X, -1.6], [HOLE_X, 4]]), routeStart: SNAP_TIME + 0.1, speed: 6.5 }
-        : { route: route([[1.6, -5], [2.4, -3.5], [7, -1.5], [9, -1]]), routeStart: 0.9, speed: 6 }),
-    })
-    this.te = off('TE', -4.8, -1.3, { number: 87, anim: 'Stance', route: route([[-4.8, -1.3], [-4.8, 1.5], [3, 3.5], [10, 4]]), routeStart: isRun ? 99 : 0.55, speed: 6 })
-    this.x = off('WR', 17, -1, { number: 18, anim: 'Stance', route: route([[17, -1], [17, 10], [15.5, 11.8], [4, 13], [-6, 13.5]]), routeStart: 0.35, speed: r(7.8, 8.4) })
-    this.z = off('WR', -14, -1.5, { number: 11, anim: 'Stance', route: route([[-14, -1.5], [-14.5, 60]]), routeStart: 0.35, speed: r(7.9, 8.5) })
-    const outDepth = r(2.5, 4.5)
-    this.slot = off('WR', 9, -1.5, { number: 13, anim: 'Stance', route: route([[9, -1.5], [9, outDepth], [23, outDepth + 0.8]]), routeStart: 0.35, speed: 7.8 })
+    this.qb = off('QB', 0, -5, { number: 8, anim: 'Idle', feel: r(0.08, 0.3), key: 'qb' })
+    this.stareDown = this.rng() < 0.12 // sometimes the QB locks onto his first read no matter what
+    const starts = { rb: [1.6, -5, 22, 'RB'], te: [-4.8, -1.3, 87, 'TE'], x: [17, -1, 18, 'WR'], z: [-14, -1.5, 11, 'WR'], slot: [9, -1.5, 13, 'WR'] }
+    const speeds = { rb: 6.4, te: 6.2, x: r(7.8, 8.4), z: r(7.9, 8.5), slot: r(7.6, 8.1) }
+    const startsAt = { x: 0.35, z: 0.35, slot: 0.35, te: 0.55, rb: pb.family === 'quick' ? 0.55 : 0.9 }
+    for (const [k, [x, dz, number, role]] of Object.entries(starts)) {
+      const pts = pb.routes?.[k]
+      this[k] = off(role, x, dz, { number, key: k, anim: 'Stance', route: pts ? route(pts) : null, routeStart: pts ? startsAt[k] : 99, speed: speeds[k] })
+    }
+    if (isRun) {
+      const run = pb.run
+      this.holeX = run.hole
+      const carrier = this[run.carrier] ?? this.qb
+      carrier.runPath = route(run.path)
+      if (run.carrier === 'rb') {
+        this.rb.route = carrier.runPath
+        this.rb.routeStart = run.draw ? 0.6 : SNAP_TIME + 0.05
+        this.rb.speed = run.toss ? 7 : 6.5
+      }
+      if (run.lead) {
+        const lead = this[run.lead]
+        lead.route = route([[1.6, -5], [this.holeX, -1.5], [this.holeX, 2]])
+        lead.routeStart = SNAP_TIME
+        lead.speed = 6.6
+        lead.leadBlock = true
+      }
+      for (const k of ['x', 'z', 'slot']) {
+        // receivers block downfield on runs
+        this[k].route = route([[starts[k][0], starts[k][1]], [starts[k][0] * 0.85, 5]])
+        this[k].routeStart = 0.35
+        this[k].speed = 5.5
+        this[k].runBlocker = true
+      }
+      if (this.te) this.te.routeStart = 99
+    }
 
-    // offensive "hot" adjustment: if the defense shows blitz, keep the back and tight end in to protect
+    // offensive "hot" adjustment: if the defense shows the all-out blitz, keep the back and tight end in
     this.maxProtect = this.coverage.shown === 'blitz' && !isRun
     if (this.maxProtect) {
       this.rb.routeStart = 99
@@ -198,7 +248,7 @@ export class PlaySim {
     }
 
     // ------------------------------------------------ defense (aligned to what they *show*)
-    const align = ALIGN[this.coverage.shown]
+    const align = ALIGN[this.coverage.shown] ?? ALIGN.cover3
     const D = {}
     const dlNumbers = [93, 97, 91, 99]
     ;[[-0.9, 1.1], [0.9, 1.1], [-3.8, 1.1], [3.8, 1.1]].forEach(([x, dz], i) => {
@@ -212,22 +262,69 @@ export class PlaySim {
     D.SS = def('S', ...align.SS, { number: 31, anim: 'Idle', speed: r(7.5, 8.3) })
     D.FS = def('S', ...align.FS, { number: 29, anim: 'Idle', speed: r(7.7, 8.5) })
     for (const p of Object.values(D)) {
-      p.react = r(0.12, 0.42) - difficulty * 0.03 // how fast they read the play / the throw
-      if (isRun && p.role !== 'DL') p.react += r(0.25, 0.9) // the play fake freezes the second level
+      p.react = r(0.12, 0.42) - difficulty * 0.03
+      if (isRun && p.role !== 'DL') p.react += pb.run.draw ? 0 : r(0.25, 0.9) // the play fake freezes the second level
       p.tackle = r(0.72, 0.9) + difficulty * 0.02
-      p.blanket = this.rng() < 0.33 + difficulty * 0.05 // sometimes the defender just wins the rep
-      p.zoneW = r(0.25, 0.6) // how tightly a zone defender squeezes receivers (eyes in the backfield vs. on his man)
+      p.blanket = this.rng() < 0.33 + difficulty * 0.05
+      p.zoneW = r(0.25, 0.6)
     }
     this.D = D
     this.assignDefense(this.coverage.call)
     this.applyKey(this.coverage.key)
+    if (isRun) {
+      // receivers stalk-block the defensive back on their side
+      const taken = new Set()
+      for (const k of ['x', 'slot', 'z']) {
+        const wr = this[k]
+        let best = null
+        let bd = Infinity
+        for (const d of [D.CBX, D.CBZ, D.SS, D.FS, D.SLB, D.WLB]) {
+          const dd = Math.abs(d.start.x - wr.start.x) + Math.max(0, d.start.z - this.los - 8)
+          if (!taken.has(d) && dd < bd) (bd = dd), (best = d)
+        }
+        if (best) {
+          taken.add(best)
+          wr.blocking = best
+          best.blocker = wr
+          best.shedAt = r(2.2, 3.4)
+        }
+      }
+    }
 
-    if (this.play.type === 'pass') this.target = this[this.play.target]
+    // ------------------------------------------------ mirror everything for a flipped play
+    if (this.flip < 0) {
+      for (const p of this.players) {
+        p.pos.x *= -1
+        p.start.x *= -1
+        for (const pts of [p.route, p.runPath]) if (pts && !pts.flipped) (pts.forEach((v) => (v.x *= -1)), (pts.flipped = true))
+        if (p.assign?.spot && !p.assign.spot.flipped) (p.assign.spot.x *= -1), (p.assign.spot.flipped = true)
+      }
+      if (this.holeX != null) this.holeX *= -1
+    }
+
+    // ------------------------------------------------ read progression
+    if (this.play.type === 'pass') {
+      const eligible = eligibleFor(this.play.id)
+      const order = (reads ?? this.play.reads).filter((k) => eligible.includes(k) && this[k].routeStart < 50)
+      for (const k of this.play.reads) if (!order.includes(k) && eligible.includes(k) && this[k].routeStart < 50) order.push(k)
+      const dropEnd = 0.45 + this.play.drop * 0.11
+      let prev = 0
+      this.reads = order.slice(0, 3).map((k) => {
+        const p = this[k]
+        const firstLeg = p.route[1].distanceTo(p.route[0])
+        const breakT = p.routeStart + routeTime(Math.min(firstLeg, 14), p.speed)
+        const at = Math.max(dropEnd + 0.05, breakT + 0.05, prev + 0.4)
+        prev = at
+        return { key: k, p, at }
+      })
+      this.dropEnd = dropEnd
+      this.throwAt = this.reads[0]?.at ?? 1.5
+    }
 
     this.ball = {
       pos: new THREE.Vector3(0, 0.15, this.los),
       dir: new THREE.Vector3(0, 0, 1),
-      state: 'ground', // ground | snap | held | air | loose | dead
+      state: 'ground',
       holder: null,
       from: new THREE.Vector3(),
       to: new THREE.Vector3(),
@@ -238,7 +335,6 @@ export class PlaySim {
     }
   }
 
-  /** What each defender actually does once the ball is snapped. */
   assignDefense(call) {
     const { D, los } = this
     const zone = (x, dz, deep = false, range = 13) => ({ type: 'zone', spot: V(x, Math.min(END_LINE, los + dz)), deep, range })
@@ -248,26 +344,31 @@ export class PlaySim {
     const A = {
       cover1: { CBX: man(this.x, true), CBZ: man(this.z, true), SS: man(this.slot), SLB: man(this.rb), WLB: man(this.te), MLB: zone(0, 4), FS: zone(0, 17, true, 20) },
       cover2: { CBX: zone(18, 5), CBZ: zone(-17, 5), SS: zone(12, 19, true, 17), FS: zone(-12, 19, true, 17), MLB: zone(0, 9), SLB: zone(7, 8), WLB: zone(-7, 8) },
+      tampa2: { CBX: zone(18, 5), CBZ: zone(-17, 5), SS: zone(12, 19, true, 17), FS: zone(-12, 19, true, 17), MLB: zone(0, 15, true, 10), SLB: zone(8, 8), WLB: zone(-8, 8) },
       cover3: { CBX: zone(16, 17, true), CBZ: zone(-15, 17, true), FS: zone(0, 19, true, 20), SS: zone(12, 6), SLB: zone(5, 8), MLB: zone(-1, 8), WLB: zone(-11, 6) },
+      cover4: { CBX: zone(16, 18, true, 11), CBZ: zone(-15, 18, true, 11), SS: zone(7, 17, true, 11), FS: zone(-6, 17, true, 11), SLB: zone(10, 6), MLB: zone(0, 7), WLB: zone(-10, 6) },
+      firezone: { CBX: zone(16, 17, true), CBZ: zone(-15, 17, true), FS: zone(0, 19, true, 20), SS: zone(12, 6), WLB: zone(-11, 6), SLB: rush, MLB: rush },
       blitz: { CBX: man(this.x, true), CBZ: man(this.z, true), SS: man(this.slot, true), FS: man(this.te), SLB: man(this.rb), MLB: rush, WLB: rush },
       prevent: { CBX: zone(17, 22, true), CBZ: zone(-16, 22, true), SS: zone(7, 28, true), FS: zone(-7, 28, true), MLB: zone(0, 12), SLB: zone(10, 10), WLB: zone(-10, 10) },
-    }[call]
+    }[call] ?? {}
     for (const [k, a] of Object.entries(A)) D[k].assign = a
-    if (call === 'prevent') D.DL3.assign = zone(5, 5) // three-man rush, edge drops
+    if (call === 'prevent') D.DL3.assign = zone(5, 5) // three-man rush
+    if (call === 'firezone') D.DL2.assign = zone(-6, 4) // zone blitz: a lineman drops into the hook
     for (const p of Object.values(D)) if (p.assign.type === 'rush' && p.role === 'LB') p.blitzer = true
   }
 
   /**
-   * The defense is keying on a play it expects (from tendencies, or a human defender's guess).
-   * Guess right: quicker reads, tighter coverage, and someone sits right where that play goes.
-   * Guess wrong: they're cheating out of position and a step slow.
+   * Keying on a concept family the offense keeps running (or a human defender's guess).
+   * Right guess: quicker reads, tighter coverage, a defender sitting in that family's window.
+   * Wrong guess: out of position and a step slow.
    */
   applyKey(key) {
-    this.key = key && key.s > 0 ? key : null
+    const family = key?.family ?? (key?.play ? PLAYS[key.play]?.family : null)
+    this.key = key && key.s > 0 && family ? { ...key, family } : null
     if (!this.key) return
     const { D } = this
     const s = this.key.s
-    const hit = this.key.play === this.play.id
+    const hit = family === this.play.family
     for (const p of Object.values(D)) {
       if (hit) {
         p.react = Math.max(0.04, p.react - 0.2 * s)
@@ -281,21 +382,22 @@ export class PlaySim {
       a.deep = deep
       return true
     }
-    switch (this.key.play) {
-      case 'out': // sit on the flat to the slot side
+    switch (family) {
+      case 'quick':
         if (!zoneAt('CBX', 17.5, 4) && !zoneAt('SS', 16, 4)) D.SS.blanket = true
+        zoneAt('WLB', -12, 4) || (D.CBZ.blanket = true)
         break
-      case 'dig': // a robber in the dig window over the middle
-        if (!zoneAt('MLB', 4, 12)) zoneAt('FS', 4, 13)
+      case 'mid':
+        if (!zoneAt('MLB', 3, 12)) zoneAt('FS', 3, 13)
         zoneAt('SLB', 9, 11)
         D.CBX.blanket = true
         break
-      case 'deep': // everybody deeper, help over the top to the go side
-        zoneAt('FS', -10, 22, true) || zoneAt('SS', -9, 22, true)
+      case 'deep':
+        zoneAt('FS', -9, 22, true) || zoneAt('SS', -8, 22, true)
         if (D.CBZ.assign.type === 'man') D.CBZ.blanket = true
         else zoneAt('CBZ', -15, 21, true)
         break
-      case 'run': // load the box, no play-fake freeze, linemen fight off blocks
+      case 'run':
         zoneAt('SS', 2, 5)
         zoneAt('MLB', -0.5, 3.5)
         for (const p of Object.values(D)) {
@@ -316,16 +418,16 @@ export class PlaySim {
       start: V(x, z),
       vel: new THREE.Vector3(),
       yaw,
-      face: null, // point to look at (overrides velocity facing)
+      face: null,
       anim: 'Idle',
       animScale: 1,
-      locked: false, // true while a one-shot owns the animation
+      locked: false,
       down: false,
       react: 0,
       cutBias: 0,
-      blocker: null, // for defenders: the offensive player engaged with him
-      shedAt: Infinity, // when the defender gets off the block
-      blocking: null, // for offense: the defender being blocked
+      blocker: null,
+      shedAt: Infinity,
+      blocking: null,
       ...extra,
     }
     this.players.push(p)
@@ -350,12 +452,12 @@ export class PlaySim {
     this.emit('snap')
   }
 
-  /** Pair blockers with rushers inside-out; extra rushers come free. */
   setupProtection() {
     const rushers = this.players.filter((p) => p.team === 'def' && p.assign?.type === 'rush')
     const blockers = this.players.filter((p) => p.role === 'OL' || p.role === 'C')
-    if (this.maxProtect || this.play.type === 'run') blockers.push(this.te)
-    if (this.maxProtect) blockers.push(this.rb)
+    const isRun = this.play.type === 'run'
+    if (this.te.routeStart > 50) blockers.push(this.te)
+    if (this.rb.routeStart > 50 && !isRun) blockers.push(this.rb)
     rushers.sort((a, b) => Math.abs(a.start.x) - Math.abs(b.start.x))
     const free = [...blockers]
     for (const d of rushers) {
@@ -363,16 +465,13 @@ export class PlaySim {
       let bd = Infinity
       for (const o of free) {
         const dd = Math.abs(o.start.x - d.start.x) + (o.role === 'RB' ? 2 : 0)
-        if (dd < bd) {
-          bd = dd
-          best = o
-        }
+        if (dd < bd) (bd = dd), (best = o)
       }
       if (!best || bd > 6) continue
       free.splice(free.indexOf(best), 1)
       best.blocking = d
       d.blocker = best
-      d.shedAt = d.role === 'DL' ? d.shed : this.r(1.1, 1.9) // a picked-up blitzer is stonewalled for a moment
+      d.shedAt = d.role === 'DL' ? d.shed : this.r(1.1, 1.9)
     }
   }
 
@@ -403,7 +502,6 @@ export class PlaySim {
     p.pos.addScaledVector(p.vel, dt)
   }
 
-  /** A defender is held up while his blocker is on him and he hasn't shed yet. */
   isEngaged(p) {
     const b = p.blocker
     return !!b && !b.down && this.t < p.shedAt && b.pos.distanceTo(p.pos) < 1.3
@@ -426,7 +524,6 @@ export class PlaySim {
     p.lockedAt = this.t
   }
 
-  /** Intercept angle: aim where the carrier will be when we can get there. */
   pursue(p, speed, dt) {
     const c = this.carrier
     if (this.t < this.catchTime + p.react) {
@@ -466,7 +563,6 @@ export class PlaySim {
       if (p.team === 'def') this.actDefense(p, t, dt)
       else this[`act_${p.role}`]?.(p, t, dt)
     }
-    // short position history so man defenders react to breaks a beat late, like humans
     for (const p of this.players) {
       if (p.team !== 'off') continue
       p.hist ??= []
@@ -502,12 +598,10 @@ export class PlaySim {
     }
   }
 
-  /** Push overlapping players apart (except the tackler on the ball carrier). */
   separate() {
     const ps = this.players
     const R = 0.85
-    // route runners are on rails until the ball is caught, so the other player gives way
-    const weight = (p) => (p.route && this.t >= p.routeStart && !this.carrier ? 0 : 1)
+    const weight = (p) => (p.route && !p.runBlocker && !p.leadBlock && this.t >= p.routeStart && !this.carrier && p.team === 'off' && p.role !== 'RB' ? 0 : 1)
     for (let i = 0; i < ps.length; i++) {
       for (let j = i + 1; j < ps.length; j++) {
         const a = ps[i]
@@ -559,12 +653,13 @@ export class PlaySim {
   }
 
   act_OL(p, t, dt) {
-    if (this.carrier && this.play.type !== 'run') return this.blockDownfield(p, t, dt, 3.5)
-    if (this.play.type === 'run') return this.runBlock(p, t, dt)
+    if (this.carrier && this.carrier !== this.qb && this.play.type !== 'run') return this.blockDownfield(p, t, dt, 3.5)
+    if (this.carrier === this.qb && this.play.type !== 'run') return this.blockDownfield(p, t, dt, 3.5)
+    const draw = this.play.run?.draw && !this.carrier
+    if (this.play.type === 'run' && !draw) return this.runBlock(p, t, dt)
     this.passBlock(p, t, dt)
   }
 
-  /** Stay between your man and the quarterback, giving ground slowly. */
   passBlock(p, t, dt) {
     p.hold = 'Block'
     const d = p.blocking
@@ -574,46 +669,44 @@ export class PlaySim {
       this.steer(p, tmp, 4.6, dt, 26)
       p.face = d.pos
     } else {
-      // no man: sit in the pocket
       tmp.copy(p.start).setZ(p.start.z - Math.min(1.4, t * 1.2))
       this.steer(p, tmp, 2.5, dt)
       this.look(p, 0, 5)
     }
   }
 
-  /** Run blocking: drive your man off the ball and away from the hole. */
   runBlock(p, t, dt) {
     if (this.carrier && this.carrier.pos.z > this.los + 2) return this.blockDownfield(p, t, dt, 3.5)
     p.hold = 'Block'
+    const hole = this.holeX
     const d = p.blocking
     if (d && !d.down) {
-      const away = Math.sign(d.pos.x - HOLE_X || p.start.x - HOLE_X || 1)
-      tmp.copy(d.pos).add(tmp2.set(-away * 0.35, 0, -0.75))
+      const reach = this.play.run?.toss ? Math.sign(hole) : 0
+      const away = reach || Math.sign(d.pos.x - hole || p.start.x - hole || 1)
+      tmp.copy(d.pos).add(tmp2.set(-away * (reach ? -0.5 : 0.35), 0, -0.75))
       this.steer(p, tmp, 4.4, dt, 26)
       p.face = d.pos
-    } else {
-      // nobody on me: climb to the second level and wall off a linebacker
-      let lb = null
-      let ld = 9
-      for (const d of this.players) {
-        if (d.role !== 'LB' || d.down || (d.blocker && d.blocker.blocking === d)) continue
-        const dd = d.pos.distanceTo(p.pos)
-        if (dd < ld) (ld = dd), (lb = d)
-      }
-      if (lb && t > SNAP_TIME + 0.2) {
-        p.blocking = lb
-        lb.blocker = p
-        lb.shedAt = t + this.r(0.7, 1.5)
-        return
-      }
-      tmp.copy(p.start).setZ(p.start.z + Math.min(1.6, t * 1.5))
-      if (Math.abs(p.start.x - HOLE_X) < 1.7) tmp.x += Math.sign(p.start.x - HOLE_X) * Math.min(0.9, t * 1.2)
-      this.steer(p, tmp, 2.5, dt)
-      this.look(p, 0, 5)
+      return
     }
+    let lb = null
+    let ld = 9
+    for (const dd of this.players) {
+      if (dd.role !== 'LB' || dd.down || (dd.blocker && dd.blocker.blocking === dd)) continue
+      const dist = dd.pos.distanceTo(p.pos)
+      if (dist < ld) (ld = dist), (lb = dd)
+    }
+    if (lb && t > SNAP_TIME + 0.2) {
+      p.blocking = lb
+      lb.blocker = p
+      lb.shedAt = t + this.r(0.7, 1.5)
+      return
+    }
+    tmp.copy(p.start).setZ(p.start.z + Math.min(1.6, t * 1.5))
+    if (Math.abs(p.start.x - hole) < 1.7) tmp.x += Math.sign(p.start.x - hole) * Math.min(0.9, t * 1.2)
+    this.steer(p, tmp, 2.5, dt)
+    this.look(p, 0, 5)
   }
 
-  /** After the catch: find the most dangerous unblocked defender near the ball and get in his way. */
   blockDownfield(p, t, dt, speed) {
     const c = this.carrier
     if (!p.blocking || p.blocking.down || p.blocking.pos.distanceTo(c.pos) > 9) {
@@ -625,10 +718,7 @@ export class PlaySim {
         const toMe = d.pos.distanceTo(p.pos)
         if (toBall > 9 || toMe > 7) continue
         const s = toBall + toMe * 0.6
-        if (s < score) {
-          score = s
-          best = d
-        }
+        if (s < score) (score = s), (best = d)
       }
       if (p.blocking && p.blocking.blocker === p) p.blocking.blocker = null
       p.blocking = best
@@ -653,49 +743,185 @@ export class PlaySim {
 
   act_QB(p, t, dt) {
     const b = this.ball
+    if (p === this.carrier) return this.actCarrier(p, t, dt)
     if (t < SNAP_TIME) return this.look(p, 0, 20)
 
+    // ---- runs
     if (this.play.type === 'run') {
-      if (b.holder === p) {
-        this.steer(p, tmp.set(0.3, 0, this.los - 4.9), 2, dt)
-        p.face = this.rb.pos
-        const meshReady = t >= SNAP_TIME + 0.45 && this.rb.pos.distanceTo(p.pos) < 1.6
-        if (meshReady || t >= SNAP_TIME + 0.8) this.handoff(t)
+      const run = this.play.run
+      if (run.carrier === 'qb') {
+        if (b.holder === p && t >= SNAP_TIME + 0.05) this.giveTo(p, t, run.lead ? `#8 BLASTS it` : 'QB keeper')
         return
       }
-      this.steer(p, tmp.set(5, 0, this.los - 7), 4.5, dt) // carry out the fake
+      if (b.holder === p) {
+        if (run.draw) {
+          // sell the pass: drop like a pass play, then slip it to the back
+          this.steer(p, tmp.set(0.3, 0, this.los - 6.5), 3.4, dt)
+          this.look(p, 0, 20)
+          if (t >= run.handoff + SNAP_TIME) {
+            for (const d of this.players) if (d.assign?.type === 'rush' && d.blocker) d.shedAt = Math.max(d.shedAt, t + 0.7)
+            this.giveTo(this.rb, t, 'Draw!')
+          }
+          return
+        }
+        this.steer(p, tmp.set(0.3 * this.flip, 0, this.los - 4.9), 2, dt)
+        p.face = this.rb.pos
+        const meshReady = t >= SNAP_TIME + run.handoff && (run.toss || this.rb.pos.distanceTo(p.pos) < 2.2) // a toss doesn't need the mesh
+        if (meshReady || t >= SNAP_TIME + run.handoff + 0.4) this.giveTo(this.rb, t, run.toss ? 'Toss!' : 'Handoff!')
+        return
+      }
+      this.steer(p, tmp.set(-4 * this.flip, 0, this.los - 7), 4.5, dt) // carry out the fake
       return
     }
 
+    // ---- passes: drop, then work the progression
     if (b.holder !== p && p.threw) {
       this.brake(p, dt)
       if (p.locked && t > p.lockedAt + 1.25) p.locked = false
       return
     }
-    const dropEnd = 0.45 + this.play.drop * 0.11
-    if (!p.threw && t < Math.min(dropEnd, this.throwAt)) {
+    if (p.threw) {
+      this.brake(p, dt)
+      p.face = this.aim.point
+      if (b.state === 'held' && b.holder === p && t >= this.aim.release) this.release(t)
+      return
+    }
+    if (t < this.dropEnd) {
       this.steer(p, tmp.set(0, 0, this.los - this.play.drop), 4.4, dt)
       return this.look(p, 0, 20)
     }
-    if (!this.aim) this.planThrow(Math.max(t, this.throwAt))
-    if (t < this.throwAt) {
-      this.brake(p, dt)
-      p.face = this.aim.point
+    this.brake(p, dt)
+    if (b.holder !== p) return
+    const read = this.reads[this.readIdx]
+    if (!read) return
+    p.face = read.p.pos // eyes on the current read
+    if (t < read.at && !this.pressured) return
+
+    const last = this.readIdx === this.reads.length - 1
+    const open = this.openness(read.p)
+    const need = (this.readIdx === 0 ? (this.stareDown ? -1.4 : 0.4) : last ? -0.5 : 0.15) - (this.pressured ? 0.6 : 0)
+    if (open >= need) return this.startThrow(read.p, t)
+    if (this.pressured) {
+      // no time: best available, a scramble, or throw it away
+      const best = this.bestRead()
+      if (best && best.open >= -0.6) return this.startThrow(best.p, t)
+      if (this.laneOpen(p) && this.rng() < 0.65) return this.giveTo(p, t, 'QB scrambles!', true)
+      if (t > 0.9) return this.throwAway(t)
       return
     }
-    if (!p.threw) {
-      p.threw = true
-      this.oneShot(p, 'Throw')
-      if (this.throwAt < t - 0.05) this.planThrow(t) // late start: re-aim for the real release
+    if (!last) {
+      this.readIdx++
+      const next = this.reads[this.readIdx]
+      next.at = Math.max(next.at, t + 0.35)
+      return
     }
-    this.brake(p, dt)
-    p.face = this.aim.point
-    if (b.state === 'held' && b.holder === p && t >= this.aim.release) this.release(t)
-    if (p.locked && t > p.lockedAt + 1.25) p.locked = false
+    // checkdown covered too: hang in a beat, then find the best option
+    if (t > read.at + 0.45) {
+      const best = this.bestRead()
+      // nothing there and green grass in front of him: take off
+      if ((!best || best.open < -0.2) && this.laneOpen(p) && this.rng() < 0.6) return this.giveTo(p, t, 'QB scrambles!', true)
+      if (best && best.open >= -0.9) return this.startThrow(best.p, t)
+      if (t > read.at + 1.1) return this.throwAway(t)
+    }
+  }
+
+  /**
+   * How open a receiver would be if the ball came out now: predicted separation at the catch, using the
+   * same rules the defenders follow (they keep doing their job until the ball is out and they react,
+   * then break on it), minus the catch radius that decides contested balls. >0 = open.
+   * The QB isn't perfect: a little noise means he sometimes sees a window that isn't there.
+   */
+  openness(R) {
+    if (!R || R.down || !R.route) return -9
+    this.planThrow(this.t, R, true)
+    const { point, time } = this._probe
+    const until = time - this.t
+    const depth = point.z - this.los
+    const reach = depth > 20 ? 2.8 : depth > 8 ? 2.2 : 1.6
+    let nd = 9
+    for (const d of this.players) {
+      if (d.team !== 'def' || d.down || d.assign?.type === 'rush') continue
+      const a = d.assign
+      const readDelay = d.react + (a?.type === 'zone' && !d.blanket ? 0.25 : 0)
+      const breakAt = THROW_RELEASE + readDelay
+      tmp3.copy(d.pos).addScaledVector(d.vel, Math.min(until, breakAt))
+      let dist = tmp3.distanceTo(point)
+      const range = a?.type === 'man' ? 40 : a?.deep ? 22 : 16
+      if (until > breakAt && dist < range) dist = Math.max(0, dist - (d.speed + 0.4) * (until - breakAt))
+      // man defenders in his hip pocket are with him wherever he goes
+      if (a?.type === 'man' && a.target === R) dist = Math.min(dist, d.pos.distanceTo(R.pos) * (d.blanket ? 0.6 : 1))
+      nd = Math.min(nd, dist)
+    }
+    const misread = (this.rng() - 0.5) * (this.pressured ? 2.2 : 1.3)
+    return nd - reach + misread
+  }
+
+  bestRead() {
+    let best = null
+    for (const r of this.reads) {
+      const o = this.openness(r.p)
+      if (!best || o > best.open) best = { p: r.p, open: o }
+    }
+    return best
+  }
+
+  laneOpen(qb) {
+    for (const d of this.players) {
+      if (d.team !== 'def' || d.down) continue
+      const dz = d.pos.z - qb.pos.z
+      if (dz > -0.5 && dz < 3.5 && Math.abs(d.pos.x - qb.pos.x) < 2.5 && !this.isEngaged(d)) return false
+    }
+    return true
+  }
+
+  startThrow(R, t) {
+    this.target = R
+    // forcing it to a covered first read: the defense reads his eyes and jumps it a beat early
+    this.staredDown = this.readIdx === 0 && this.stareDown && this.openness(R) < 0
+    if (this.staredDown) for (const d of this.players) if (d.team === 'def') d.react = Math.max(0.03, d.react - 0.22)
+    this.planThrow(t, R)
+    this.qb.threw = true
+    this.oneShot(this.qb, 'Throw')
+  }
+
+  /** Hand the ball to (or keep it for) a runner. */
+  giveTo(p, t, msg, scramble = false) {
+    this.ball.holder = p
+    this.carrier = p
+    this.catchTime = t
+    p.cutBias = (this.rng() - 0.5) * 0.6
+    p.scramble = scramble
+    this.message = msg
+    this.how = p === this.qb ? (scramble ? 'scramble' : this.play.run?.lead ? 'blast' : 'keep') : 'run'
+    this.emit(scramble ? 'scramble' : 'handoff')
+  }
+
+  throwAway(t) {
+    const b = this.ball
+    const qb = this.qb
+    this.oneShot(qb, 'Throw')
+    qb.threw = true
+    b.state = 'loose'
+    b.holder = null
+    b.vel.set(Math.sign(qb.pos.x || 1) * 16, 6, 4)
+    this.phase = 'dead'
+    this.deadTime = t
+    this.result = { good: false, kind: 'incomplete', gain: 0, first: false, spot: this.los, elapsed: t }
+    this.message = 'Nobody open. Thrown away.'
+    this.emit('incomplete')
   }
 
   act_WR(p, t, dt) {
     if (p === this.carrier) return this.actCarrier(p, t, dt)
+    if (p.runBlocker && p.blocking && !p.blocking.down && t > p.routeStart) {
+      // stalk block: get between your man and the ball, stay on him
+      const d = p.blocking
+      tmp.subVectors(this.carrier?.pos ?? this.qb.pos, d.pos).setY(0).normalize().multiplyScalar(0.9).add(d.pos)
+      this.steer(p, tmp, 6.5, dt, 20)
+      p.hold = d.pos.distanceTo(p.pos) < 1.4 ? 'Block' : null
+      p.face = p.hold ? d.pos : null
+      return
+    }
     if (this.carrier) return this.blockDownfield(p, t, dt, 5)
     if (t < p.routeStart) {
       p.hold = 'Stance'
@@ -715,7 +941,7 @@ export class PlaySim {
     if (p === this.carrier) return this.actCarrier(p, t, dt)
     if (this.carrier) return this.blockDownfield(p, t, dt, 5)
     if (t < p.routeStart) {
-      if (this.play.type === 'run') return this.runBlock(p, t, dt)
+      if (this.play.type === 'run' && !this.play.run.draw) return this.runBlock(p, t, dt)
       if (p.blocking) return this.passBlock(p, t, dt)
       p.hold = 'Block'
       return
@@ -725,29 +951,46 @@ export class PlaySim {
 
   act_RB(p, t, dt) {
     if (p === this.carrier) return this.actCarrier(p, t, dt)
+    if (p.leadBlock) {
+      // lead blocker: through the hole, then take on the first linebacker
+      if (t < p.routeStart) return
+      if (!p.blocking && p.pos.z < this.los + 1) return this.followRoute(p, dt)
+      return this.blockDownfield(p, t, dt, 5)
+    }
     if (this.carrier) return this.blockDownfield(p, t, dt, 5)
     if (t < p.routeStart) {
       if (p.blocking && t > SNAP_TIME) return this.passBlock(p, t, dt)
       p.hold = t < SNAP_TIME ? 'Stance' : 'Block'
       return
     }
+    if (this.play.type === 'run' && !this.carrier) {
+      // get to the mesh point and wait there for the ball
+      p.hold = null
+      p.face = this.qb.pos
+      return this.steer(p, p.runPath[1], this.play.run.toss ? 7 : 4, dt)
+    }
     this.act_WR(p, t, dt)
   }
 
-  /** Ball carrier: score a fan of directions for open space and progress, then go. */
+  /** Ball carrier: follow the designed run path, then score directions for open space. */
   actCarrier(p, t, dt) {
     if (p.locked && t > p.lockedAt + 0.62) p.locked = false
     const since = t - this.catchTime
     p.face = null
-    // the back hits the A gap first
-    if (p === this.rb && this.play.type === 'run' && p.pos.z < this.los + 0.5) {
-      this.steer(p, tmp.set(HOLE_X, 0, this.los + 2), 7.4, dt, 20)
+    // designed runs: hit the hole first
+    if (p.runPath && this.play.type === 'run' && p.pos.z < this.los + 1.2) {
+      p.pathIdx ??= 1
+      while (p.pathIdx < p.runPath.length - 1 && p.runPath[p.pathIdx].distanceTo(p.pos) < 1.2) p.pathIdx++
+      const fast = this.play.run.carrier === 'qb' ? 6.6 : 7.4
+      // aim *through* the waypoint so he doesn't ease off at each one
+      tmp.subVectors(p.runPath[p.pathIdx], p.pos).setY(0).normalize().multiplyScalar(6).add(p.pos)
+      this.steer(p, tmp, fast, dt, 22)
       return
     }
     const clock = this.situation.clock ?? 120
     const nearSideline = Math.abs(p.pos.x) > SIDELINE - 7
-    if ((this.play.toSideline && since > 0.3) || (clock < 25 && nearSideline && since > 0.3)) {
-      // get what you can, then step out to stop the clock
+    const sidelineCatch = this.play.sideline?.includes(p.key) && p !== this.qb
+    if ((sidelineCatch && since > 0.3) || (clock < 25 && nearSideline && since > 0.3)) {
       this.steer(p, tmp.set(Math.sign(p.pos.x) * (SIDELINE + 3), 0, p.pos.z + p.cutBias * 3 + 1.2), 6.5, dt, 14)
       return
     }
@@ -762,21 +1005,16 @@ export class PlaySim {
       let clearance = 8
       for (const d of this.players) {
         if (d.team !== 'def' || d.down) continue
-        const ex = d.pos.x + d.vel.x * 0.35
-        const ez = d.pos.z + d.vel.z * 0.35
-        let dd = Math.hypot(ex - px, ez - pz)
+        let dd = Math.hypot(d.pos.x + d.vel.x * 0.35 - px, d.pos.z + d.vel.z * 0.35 - pz)
         if (this.isEngaged(d)) dd += 2.5
         clearance = Math.min(clearance, dd)
       }
       let s = dz * 1.6 + clearance * 0.55 - Math.abs(a - curAngle) * 0.35 + p.cutBias * dx * 0.3
       if (Math.abs(px) > SIDELINE - 1) s -= 4
-      if (s > bestScore) {
-        bestScore = s
-        bestAngle = a
-      }
+      if (s > bestScore) (bestScore = s), (bestAngle = a)
     }
     tmp.set(Math.sin(bestAngle), 0, Math.cos(bestAngle)).multiplyScalar(6).add(p.pos)
-    const speed = p === this.rb ? 7.2 : since < 0.4 ? 4.8 : 7.3
+    const speed = p === this.qb ? (p.scramble ? 6.8 : 6.4) : p === this.rb ? 7.2 : since < 0.4 ? 4.8 : 7.3
     this.steer(p, tmp, speed, dt, 16)
   }
 
@@ -785,7 +1023,8 @@ export class PlaySim {
     const a = p.assign
     p.hold = null
     if (this.carrier) {
-      // run fits: blocked defenders stay engaged until they shed, then everyone pursues
+      // a draw works because the rush keeps charging at the quarterback for a beat after the handoff
+      if (this.play.run?.draw && a.type === 'rush' && t < this.catchTime + 0.55) return this.rushQB(p, t, dt)
       if (this.isEngaged(p)) {
         p.hold = 'Block'
         this.steer(p, this.carrier.pos, 1, dt)
@@ -794,10 +1033,8 @@ export class PlaySim {
       return this.pursue(p, p.speed + (p.role === 'DL' ? 0 : 0.4), dt)
     }
     if (t < SNAP_TIME * 0.6) return
-
     if (a.type === 'rush') return this.rushQB(p, t, dt)
 
-    // after the throw: break on the ball
     const b = this.ball
     const ballRange = a.type === 'man' ? 40 : a.deep ? 22 : 16
     const readDelay = p.react + (a.type === 'zone' && !p.blanket ? 0.25 : 0)
@@ -810,7 +1047,6 @@ export class PlaySim {
     if (a.type === 'man') {
       const r = a.target
       if (t < 0.25 + p.react * 0.4) return
-      // read the receiver a beat late and extrapolate: stays with straight lines, overruns sharp breaks
       const lagT = p.blanket ? 0.03 : a.press ? 0.1 + p.react * 0.25 : 0.12 + p.react * 0.35
       const lag = Math.min((r.hist?.length ?? 0) / 2 - 2, Math.round(lagT / dt))
       let vx = 0
@@ -823,14 +1059,13 @@ export class PlaySim {
         tmp.set(h[i] + vx * lagT, 0, h[i + 1] + vz * lagT)
       } else tmp.copy(r.pos)
       const v = Math.hypot(vx, vz)
-      if (r.routeStart > 50) tmp.z += 3 // his man stayed in to block: sit underneath
+      if (r.routeStart > 50) tmp.z += 3
       else if (v > 2) {
-        // hip pocket: just behind him along his path, shaded to the inside
         const back = p.blanket ? 0.35 : 0.75
         tmp.x -= (vx / v) * back
         tmp.z -= (vz / v) * back
         tmp.x += r.pos.x > 0 ? -0.3 : 0.3
-      } else tmp.z += a.press ? 0.9 : 1.6 // pre-snap / at the stem: cushion
+      } else tmp.z += a.press ? 0.9 : 1.6
       this.steer(p, tmp, p.speed + (p.blanket ? 0.5 : 0), dt, a.press || p.blanket ? 20 : 16)
       p.face = t < 1.0 ? this.qb.pos : null
       return
@@ -841,13 +1076,10 @@ export class PlaySim {
     let threat = null
     let td = Infinity
     for (const o of this.players) {
-      if (o.team !== 'off' || !o.route || o.routeStart > 50 || t < o.routeStart) continue
+      if (o.team !== 'off' || !o.route || o.routeStart > 50 || t < o.routeStart || o.runBlocker || o.leadBlock) continue
       const d = o.pos.distanceTo(spot)
       const deeperThanMe = o.pos.z > p.pos.z - 2
-      if ((a.deep ? deeperThanMe && d < (a.range ?? 13) : d < 7.5) && d < td) {
-        td = d
-        threat = o
-      }
+      if ((a.deep ? deeperThanMe && d < (a.range ?? 13) : d < 7.5) && d < td) (td = d), (threat = o)
     }
     tmp.copy(spot)
     if (threat) {
@@ -855,7 +1087,6 @@ export class PlaySim {
       tmp2.copy(threat.pos)
       tmp2.z += a.deep ? 2.5 : 0.8
       tmp.lerp(tmp2, w)
-      // disciplined deep defenders stay over the top; the rest can get caught flat-footed
       if (a.deep) tmp.z = Math.max(tmp.z, threat.pos.z + (p.blanket ? 1.5 : -1.5))
     }
     tmp.z = Math.min(tmp.z, END_LINE)
@@ -864,18 +1095,16 @@ export class PlaySim {
   }
 
   rushQB(p, t, dt) {
-    if (this.play.type === 'run' && this.isEngaged(p)) {
+    if (this.play.type === 'run' && !this.play.run.draw && this.isEngaged(p)) {
       p.hold = 'Block'
-      tmp.copy(p.pos).add(tmp2.set(Math.sign(p.pos.x - HOLE_X || 1) * 0.8, 0, 0.5)) // getting driven back and out of the hole
+      tmp.copy(p.pos).add(tmp2.set(Math.sign(p.pos.x - this.holeX || 1) * 0.8, 0, 0.5))
       this.steer(p, tmp, 1, dt)
       this.look(p, 0, -5)
       return
     }
     const qb = this.qb
     tmp.copy(qb.pos)
-    // edge rushers loop around the corner instead of running into the pile
     if (p.blocker && Math.abs(p.start.x) > 3 && p.pos.z > qb.pos.z + 2) tmp.x += Math.sign(p.start.x) * 2.2
-    // a free rusher (nobody picked him up) shoots the gap beside the pile, then closes on the quarterback
     const free = !p.blocker
     if (free && p.pos.z > this.los - 2) tmp.set(Math.sign(p.start.x || 1) * 2.5, 0, this.los - 3)
     const engaged = this.isEngaged(p)
@@ -885,27 +1114,22 @@ export class PlaySim {
   }
 
   // ------------------------------------------------------------------ ball
-  handoff(t) {
-    this.ball.holder = this.rb
-    this.carrier = this.rb
-    this.catchTime = t
-    this.rb.cutBias = (this.rng() - 0.5) * 0.6
-    this.message = 'Handoff!'
-    this.emit('handoff')
-  }
-
-  /** Lead the receiver: iterate to where he'll be when the ball gets there. */
-  planThrow(throwStart) {
-    const release = tmp.set(this.qb.pos.x, 1.6, this.qb.pos.z)
+  /** Lead receiver R: iterate to where he'll be when the ball gets there. probe=true only measures. */
+  planThrow(throwStart, R = this.target, probe = false) {
+    const release = tmp4.set(this.qb.pos.x, 1.6, this.qb.pos.z)
     const tr = throwStart + THROW_RELEASE
     let ta = tr + 1
-    const point = new THREE.Vector3()
+    const point = probe ? (this._probePoint ??= new THREE.Vector3()) : new THREE.Vector3()
     for (let i = 0; i < 6; i++) {
-      this.routePosAt(this.target, ta, point)
+      this.routePosAt(R, ta, point)
       const dist = release.distanceTo(point)
       ta = tr + dist / ballSpeed(dist)
     }
-    this.routePosAt(this.target, ta, point)
+    this.routePosAt(R, ta, point)
+    if (probe) {
+      this._probe = { time: ta, point }
+      return
+    }
     this.aim = { time: ta, point, release: tr }
     this.throwAt = throwStart
   }
@@ -922,27 +1146,23 @@ export class PlaySim {
     this.emit('throw')
   }
 
-  /** Rushers closing in: hurry the throw, or bring the quarterback down. */
   checkPressure(t) {
     const qb = this.qb
-    if (this.play.type !== 'pass' || this.ball.holder !== qb || t < SNAP_TIME) return
+    if (this.play.type !== 'pass' || this.ball.holder !== qb || this.carrier === qb || t < SNAP_TIME) return
     let nearest = Infinity
     let who = null
     for (const d of this.players) {
       if (d.team !== 'def' || d.down || this.isEngaged(d)) continue
       const dd = d.pos.distanceTo(qb.pos)
-      if (dd < nearest) {
-        nearest = dd
-        who = d
-      }
+      if (dd < nearest) (nearest = dd), (who = d)
     }
-    // only a ball that's basically out escapes the sack
-    if (nearest < 1.0 && !(qb.threw && t > this.aim.release - 0.1)) return this.sack(t, who)
-    // feel the rush: a free rusher less than ~0.6s away forces a hurried throw after a beat
-    if (!qb.threw && !this.hurried && t > 0.7 && nearest / who.speed < 0.6 && t + qb.feel < this.throwAt) {
+    if (nearest < 1.0 && !(qb.threw && this.aim && t > this.aim.release - 0.1)) return this.sack(t, who)
+    if (!qb.threw && !this.pressured && t > 0.7 && nearest / who.speed < 0.6) {
+      this.pressured = true
       this.hurried = true
       this.message = 'Under pressure!'
-      this.planThrow(t + qb.feel)
+      // he needs a beat to feel it
+      for (const r of this.reads) r.at = Math.min(r.at, t + qb.feel)
     }
   }
 
@@ -981,7 +1201,6 @@ export class PlaySim {
         } else this.arrive(t)
       }
     } else if (b.state === 'loose') {
-      // deflected ball tumbles to the turf
       b.vel.y -= 25 * dt
       b.pos.addScaledVector(b.vel, dt)
       if (b.pos.y < 0.12) {
@@ -990,10 +1209,8 @@ export class PlaySim {
         b.vel.y = Math.abs(b.vel.y) * 0.3
       }
     }
-    // held / dead: PlayScene snaps the ball to the holder's glove after animation.
   }
 
-  /** Ball reaches the receiver: overthrow, interception, breakup, or catch. */
   arrive(t) {
     const b = this.ball
     const r = this.target
@@ -1002,12 +1219,9 @@ export class PlaySim {
     for (const d of this.players) {
       if (d.team !== 'def' || d.down) continue
       const dd = Math.min(d.pos.distanceTo(r.pos), d.pos.distanceTo(this.aim.point))
-      if (dd < nd) {
-        nd = dd
-        cover = d
-      }
+      if (dd < nd) (nd = dd), (cover = d)
     }
-    const deep = this.play.id === 'deep'
+    const deep = this.aim.point.z - this.los > 20
     const incomplete = (msg) => {
       b.state = 'loose'
       b.holder = null
@@ -1022,11 +1236,10 @@ export class PlaySim {
       b.vel.copy(b.dir).multiplyScalar(9).setY(1)
       return incomplete(this.hurried ? `Incomplete! Rushed throw sails past #${r.number}` : `Incomplete! Overthrown, just past #${r.number}`)
     }
-    // a deep ball hangs, so defenders in the area get a real shot at it
-    // a defense that guessed this play is sitting on it: bigger window to make a play on the ball
-    const keyed = this.key && this.key.play === this.play.id ? this.key.s : 0
-    const reach = (deep ? 2.8 : this.play.id === 'dig' ? 2.2 : 1.6) + keyed * 0.6
-    const pInt = THREE.MathUtils.clamp((reach * 0.55 - nd) / (reach * 0.55), 0, 1) * (deep ? 0.3 : 0.28) * (this.hurried ? 1.4 : 1) * (1 + keyed * 0.8)
+    const keyed = this.key && this.key.family === this.play.family ? this.key.s : 0
+    const mid = !deep && this.aim.point.z - this.los > 8
+    const reach = (deep ? 2.8 : mid ? 2.2 : 1.6) + keyed * 0.6
+    const pInt = THREE.MathUtils.clamp((reach * 0.8 - nd) / (reach * 0.8), 0, 1) * (deep ? 0.36 : 0.3) * (this.hurried ? 1.4 : 1) * (1 + keyed * 0.8) * (this.staredDown ? 1.5 : 1)
     const pBreak = THREE.MathUtils.clamp((reach - nd) / reach, 0, (deep ? 0.65 : 0.55) + keyed * 0.15)
     const roll = this.rng()
     if (roll < pInt) {
@@ -1053,6 +1266,7 @@ export class PlaySim {
     b.holder = r
     this.carrier = r
     this.catchTime = t
+    this.how = 'catch'
     r.cutBias = (this.rng() - 0.5) * 0.6
     this.message = nd < 2 ? 'Caught it in traffic!' : 'Caught it! Run!'
     this.emit('catch')
@@ -1061,11 +1275,11 @@ export class PlaySim {
   checkTackle(t) {
     const c = this.carrier
     if (!c || t < this.catchTime + 0.45) return
+    const blast = this.how === 'blast'
     for (const d of this.players) {
       if (d.team !== 'def' || d.locked || d.down || this.isEngaged(d)) continue
       const dist = d.pos.distanceTo(c.pos)
       if (dist >= 1.8) continue
-      // from behind you need to be right on him to make the play
       tmp.copy(c.vel).setY(0)
       const fromBehind = tmp.lengthSq() > 4 && tmp.normalize().dot(tmp2.subVectors(c.pos, d.pos).setY(0).normalize()) > 0.6
       if (fromBehind && dist > 1.25) continue
@@ -1074,21 +1288,18 @@ export class PlaySim {
       d.face = null
       d.yaw = Math.atan2(c.pos.x - d.pos.x, c.pos.z - d.pos.z)
       d.vel.set(Math.sin(d.yaw), 0, Math.cos(d.yaw)).multiplyScalar(4)
-      // tackle odds: worse from behind, worse for big guys in space
-      tmp.copy(c.vel).setY(0)
-      const chasing = tmp.lengthSq() > 1 && tmp.normalize().dot(tmp2.subVectors(c.pos, d.pos).setY(0).normalize()) > 0.5
-      const make = d.tackle - (chasing ? 0.14 : 0) - (d.role === 'DL' && c !== this.rb ? 0.1 : 0)
+      if (blast) this.emit('blast')
+      const make = d.tackle - (fromBehind ? 0.14 : 0) - (d.role === 'DL' && c !== this.rb ? 0.1 : 0) - (blast ? 0.16 : 0)
       if (this.rng() > make) {
         d.vel.multiplyScalar(0.6)
         d.yaw += (this.rng() - 0.5) * 0.9
-        this.message = 'Broke a tackle!'
+        this.message = blast ? 'QB BLAST! Runs right through him!' : 'Broke a tackle!'
         c.cutBias = -c.cutBias || 0.3
         this.emit('brokenTackle')
         continue
       }
       this.tackler = d
-      // a tackle right at the sideline usually knocks him out of bounds (and stops the clock)
-      const atSideline = Math.abs(c.pos.x) > (this.play.toSideline ? 16 : SIDELINE - 1.5)
+      const atSideline = Math.abs(c.pos.x) > (this.play.sideline?.includes(c.key) ? 16 : SIDELINE - 1.5)
       this.endPlay(t, atSideline ? 'out' : 'tackle')
       c.pendingFall = t + 0.22
       this.emit(atSideline ? 'out' : 'tackle')
@@ -1116,8 +1327,14 @@ export class PlaySim {
     const spot = kind === 'touchdown' ? GOAL_LINE : c.pos.z
     const gain = Math.round(spot - this.los)
     const first = spot >= this.firstDown
-    this.result = { good: kind === 'touchdown' || first || gain >= 4, kind, gain, first, spot, elapsed: t }
-    const how = this.play.type === 'run' ? `#${c.number} runs` : `Complete to #${c.number}`
+    this.result = { good: kind === 'touchdown' || first || gain >= 4, kind, gain, first, spot, elapsed: t, how: this.how }
+    const how = {
+      catch: `Complete to #${c.number}`,
+      run: `#${c.number} runs`,
+      blast: '#8 QB BLAST',
+      keep: '#8 keeps it',
+      scramble: '#8 scrambles',
+    }[this.how] ?? `#${c.number} runs`
     const yards = `${gain} yard${Math.abs(gain) === 1 ? '' : 's'}`
     if (kind === 'touchdown') this.message = `TOUCHDOWN! ${how} ${yards}`
     else this.message = `${how} for ${yards}${kind === 'out' ? ', out of bounds' : ''}${first ? ' — FIRST DOWN!' : ''}`
@@ -1134,11 +1351,16 @@ export class PlaySim {
   }
 }
 
-// Pre-snap alignments (x, depth past the line) for what the defense *shows*.
+// Pre-snap alignments (x, depth past the line) for the shell the defense *shows*.
+const ONE_HIGH = { MLB: [0, 5], SLB: [4.5, 5], WLB: [-4.5, 5], CBX: [17, 7], CBZ: [-14, 7], SS: [10, 7], FS: [0, 14] }
+const TWO_HIGH = { MLB: [0, 5], SLB: [4.5, 5], WLB: [-4.5, 5], CBX: [17.5, 4.5], CBZ: [-14.5, 4.5], SS: [9, 13], FS: [-9, 13] }
 const ALIGN = {
-  cover1: { MLB: [0, 5], SLB: [4.5, 5], WLB: [-4.5, 5], CBX: [17, 1.8], CBZ: [-14, 1.8], SS: [9, 5], FS: [0, 14] },
-  cover2: { MLB: [0, 5], SLB: [4.5, 5], WLB: [-4.5, 5], CBX: [17.5, 4.5], CBZ: [-14.5, 4.5], SS: [9, 13], FS: [-9, 13] },
-  cover3: { MLB: [0, 5], SLB: [4.5, 5], WLB: [-4.5, 5], CBX: [17, 7], CBZ: [-14, 7], SS: [10, 7], FS: [0, 14] },
+  cover1: { ...ONE_HIGH, CBX: [17, 1.8], CBZ: [-14, 1.8], SS: [9, 5] },
+  cover3: ONE_HIGH,
+  firezone: { ...ONE_HIGH, MLB: [0.8, 4], SLB: [3.5, 4.2] },
+  cover2: TWO_HIGH,
+  tampa2: { ...TWO_HIGH, MLB: [0, 6] },
+  cover4: { ...TWO_HIGH, CBX: [17, 7], CBZ: [-14, 7], SS: [8, 11], FS: [-8, 11] },
   blitz: { MLB: [1.3, 2.4], SLB: [3.5, 4], WLB: [-1.6, 2.4], CBX: [17, 1.6], CBZ: [-14, 1.6], SS: [9, 3.5], FS: [-5, 5] },
   prevent: { MLB: [0, 8], SLB: [7, 8], WLB: [-7, 8], CBX: [17, 11], CBZ: [-14, 11], SS: [8, 20], FS: [-8, 20] },
 }
