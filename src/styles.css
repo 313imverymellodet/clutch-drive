@@ -483,3 +483,34 @@ a { color: inherit; }
 .pb-chosen-text { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; flex: 1; min-width: 0; }
 .pb-chosen-text strong { font-family: var(--display); font-size: 16px; text-transform: uppercase; }
 @media (max-width: 420px) { .pb-chosen .route-icon { width: 60px; height: 46px; } .pb-chosen .pb-desc { display: none; } }
+
+/* ------------------------------------------------------------------ v5: win probability + real moments */
+.wpm { display: flex; align-items: center; gap: 6px; background: rgba(22, 24, 29, 0.85); color: #fff; border-radius: 999px; padding: 3px 10px 3px 12px; min-width: 240px; font-weight: 900; font-size: 11px; letter-spacing: 0.05em; position: relative; }
+.wpm-label { opacity: 0.75; }
+.wpm-track { flex: 1; height: 8px; border-radius: 999px; background: rgba(255,255,255,0.18); overflow: hidden; }
+.wpm-fill { display: block; height: 100%; border-radius: 999px; transition: width 0.8s cubic-bezier(0.3, 1.2, 0.5, 1); box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5); }
+.wpm-num { font-family: var(--display); font-size: 13px; min-width: 36px; text-align: right; }
+.wpm-delta { position: absolute; right: -6px; top: -12px; padding: 1px 6px; border-radius: 999px; font-size: 11px; border: 2px solid var(--ink); animation: pop 0.5s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+.wpm-delta.up { background: #7dffb0; color: var(--ink); }
+.wpm-delta.down { background: #ff8a80; color: var(--ink); }
+@keyframes pop { from { transform: scale(0.2); opacity: 0; } }
+.wpchart { width: 100%; max-width: 300px; height: auto; margin: 6px auto 0; display: block; }
+.wpchart-mid { stroke: rgba(22,24,29,0.2); stroke-dasharray: 3 3; }
+.wpchart-area { fill: rgba(255, 212, 0, 0.35); }
+.wpchart-line { fill: none; stroke: var(--ink); stroke-width: 2.5; stroke-linejoin: round; }
+.wpchart-dot { fill: var(--ink); }
+.wpchart-txt { font-size: 10px; font-weight: 900; fill: var(--ink); }
+.history { margin: 10px 0 4px; background: #fff; border: 2px solid var(--ink); border-radius: 12px; padding: 8px 10px; font-size: 13px; line-height: 1.4; text-align: left; }
+.history b { font-family: var(--display); font-size: 13px; text-transform: uppercase; display: block; margin-bottom: 2px; }
+.moment-tag { display: inline-flex; align-items: center; gap: 6px; background: var(--ink); color: #fff; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; align-self: flex-start; }
+.credit { font-size: 10.5px; opacity: 0.65; margin: 0; }
+.credit a { color: inherit; }
+@media (max-width: 420px) { .wpm { min-width: 0; width: calc(100vw - 24px); } }
+
+/* v6: real branding (test builds) */
+.team-logo { object-fit: contain; flex: none; display: inline-block; }
+.ts-row { display: flex; align-items: center; gap: 6px; }
+.bug-logo { vertical-align: -4px; margin-right: 5px; filter: drop-shadow(0 1px 0 rgba(255,255,255,0.5)); }
+.intro-logo { vertical-align: -6px; margin-right: 8px; }
+.mc-team .team-logo { vertical-align: -5px; margin-right: 5px; }
+@media (max-width: 600px) { .bug-logo { width: 15px; height: 15px; margin-right: 3px; } }

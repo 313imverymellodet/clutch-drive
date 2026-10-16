@@ -1,0 +1,44 @@
+{
+ "source": "nflverse play-by-play (CC BY 4.0)",
+ "seasons": [
+  2012,
+  2026
+ ],
+ "rows": 13958,
+ "names": [
+  "bias",
+  "min",
+  "sqrt_min",
+  "yds",
+  "yds2",
+  "yds_x_min",
+  "down2",
+  "down3",
+  "down4",
+  "log_togo",
+  "down4_log_togo",
+  "timeouts",
+  "timeouts_per_min",
+  "def_timeouts",
+  "score_diff",
+  "goal_to_go"
+ ],
+ "w": [
+  0.24673,
+  -0.859864,
+  2.435276,
+  -3.826359,
+  0.178099,
+  0.576973,
+  -0.142432,
+  -0.423726,
+  -0.753422,
+  -0.115468,
+  -0.081321,
+  -0.073322,
+  0.140992,
+  0.070646,
+  0.300374,
+  -0.043824
+ ]
+}

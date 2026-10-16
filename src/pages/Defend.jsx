@@ -6,12 +6,15 @@ import { chooseOffense } from '../sim/aiOffense'
 import { TEAM_BY_ABBR } from '../data/nflTeams'
 import { applyResult, callTimeout, dayNumber, defenseTip, downAndDistance, fmtBallOn, fmtClock, hashString, makeScenario, newDrive, rngFrom, tickClock, todayKey } from '../game/drive'
 import { load, save } from '../game/storage'
-import { FieldBar, Scorebug, ShareButton } from '../ui/GameUI'
+import { FieldBar, Scorebug, ShareButton, WPChart, WinProbMeter, wpTrail } from '../ui/GameUI'
+import { winProb } from '../game/winprob'
+import { momentForDay } from '../game/moments'
 import { TeamSelect } from '../ui/TeamSelect'
 import { DefensePicker } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
+import { rosterFor, useRealData } from '../game/real'
 
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 const AI_HUDDLE = 12 // seconds a running clock burns while their offense lines up
@@ -47,9 +50,10 @@ export default function Defend({ daily: isDaily }) {
   const dateKey = todayKey()
   const day = dayNumber(dateKey)
   const [prefs, setPrefs] = useState(() => load('cd.defense', { you: 'DEN', them: 'KC', n: 0, streak: 0, best: 0 }))
+  // the bonus round: today's real team scored, now they have to hold on
   const dailyTeams = useMemo(() => {
-    const d = makeScenario(`daily-${dateKey}`)
-    return { you: d.offense, them: d.defense }
+    const m = momentForDay(dateKey)
+    return { you: m.off, them: m.def }
   }, [dateKey])
   const teams = isDaily ? dailyTeams : prefs
   // difficulty is locked in when a drive starts; updating the streak after a win must not restart the drive
@@ -65,6 +69,11 @@ export default function Defend({ daily: isDaily }) {
   const [stage, setStage] = useState('intro') // intro | call | live | result | over
   const [sim] = useState(() => new PlaySim())
   const [simKey, setSimKey] = useState(0)
+  // test builds: both teams' current real players (read through a ref so a late load never restarts the drive)
+  const realData = useRealData()
+  const roster = useMemo(() => rosterFor({ offense: scenario.offense, defense: scenario.defense }), [scenario, realData]) // eslint-disable-line react-hooks/exhaustive-deps
+  const rosterRef = useRef(roster)
+  rosterRef.current = roster
   const [status, setStatus] = useState({ phase: 'presnap' })
   const [draft, setDraft] = useState({ call: 'cover3', shown: null, key: null })
   const [replaying, setReplaying] = useState(false)
@@ -77,7 +86,7 @@ export default function Defend({ daily: isDaily }) {
     (d, look) => {
       sim.camMode = 'broadcast'
       sim.timeScale = 1
-      sim.reset({ play: 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: { call: look, shown: look } })
+      sim.reset({ play: 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: { call: look, shown: look }, roster: rosterRef.current })
       setSimKey((k) => k + 1)
     },
     [sim],
@@ -134,7 +143,7 @@ export default function Defend({ daily: isDaily }) {
     const coverage = { call: draft.call, shown, key: draft.key ? { family: draft.key, s: 0.8, guess: true } : null }
     sim.camMode = 'broadcast'
     sim.timeScale = 1
-    sim.reset({ play: call.play, seed: hashString(`${scenario.id}|${n}|${draft.call}|${shown}|${draft.key}`), los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, flip: call.flip })
+    sim.reset({ play: call.play, seed: hashString(`${scenario.id}|${n}|${draft.call}|${shown}|${draft.key}`), los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, flip: call.flip, roster })
     sim.snap()
     applied.current = null
     setSimKey((k) => k + 1)
@@ -165,7 +174,7 @@ export default function Defend({ daily: isDaily }) {
   }
 
   const replay = () => {
-    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0 })
+    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0, roster: sim.roster })
     sim.camMode = 'close'
     sim.timeScale = 0.45
     sim.snap()
@@ -216,7 +225,7 @@ export default function Defend({ daily: isDaily }) {
         <Canvas dpr={[1, 2]} camera={{ fov: 45, position: [0, 14, drive.ballOn - 80], near: 0.1, far: 1000 }}>
           <PlayScene
             sim={sim}
-            version={`${scenario.offense}-${scenario.defense}`}
+            version={`${scenario.offense}-${scenario.defense}-${roster ? 'real' : 'generic'}`}
             offense={them}
             defense={you}
             onStatus={onStatus}
@@ -230,6 +239,12 @@ export default function Defend({ daily: isDaily }) {
 
       <div className="hud-top">
         <Scorebug drive={drive} offense={them} defense={you} clock={drive.clock} running={false} />
+        <WinProbMeter
+          p={1 - (stage === 'result' || stage === 'over' ? wpTrail(drive).at(-1) : winProb(drive))}
+          last={stage === 'result' && wpTrail(drive).length > 1 ? 1 - wpTrail(drive).at(-2) : null}
+          team={you}
+          label="YOUR WIN PROB"
+        />
         <div className="duel-strip">
           <span className="duel-role def">You: DEFENSE · up {lead}</span>
           {grid && <span>{grid}</span>}
@@ -303,6 +318,7 @@ export default function Defend({ daily: isDaily }) {
               {you.abbr} {drive.scoreDef} – {drive.scoreOff} {them.abbr}. {youWon ? reasonForDefense(drive.reason) : 'Touchdown. They win it.'}
             </p>
             <div className="grid-emoji">{grid}</div>
+            <WPChart trail={[...wpTrail(drive), youWon ? 0 : 1]} invert />
             {!isDaily && (
               <div className="stats">
                 <div><b>{prefs.streak}</b><span>Stop streak</span></div>
