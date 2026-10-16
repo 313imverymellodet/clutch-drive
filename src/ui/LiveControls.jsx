@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { openTone } from '../components/LiveRings'
-import { shortName } from '../game/real'
+
+/** "Amon-Ra St. Brown" -> "St. Brown": last names fit three across on a phone. */
+const lastName = (name) => name.split(' ').slice(1).join(' ') || name
 
 const haptic = (ms = 12) => {
   try {
@@ -64,7 +66,7 @@ export function LiveControls({ sim }) {
           {c.reads.map((r) => (
             <button key={r.key} className={`lc-read${c.queued === r.key ? ' on' : ''}`} style={{ '--tone': openTone(r.open) }} onPointerDown={() => send({ type: 'throw', key: r.key })}>
               <span className="lc-n">{r.n}</span>
-              <span className="lc-name">{r.name ? shortName(r.name) : `#${r.number}`}</span>
+              <span className="lc-name">{r.name ? lastName(r.name) : `#${r.number}`}</span>
               <span className="lc-dot" aria-label={r.open > 0.4 ? 'open' : r.open > -0.4 ? 'tight' : 'covered'} />
             </button>
           ))}
