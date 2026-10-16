@@ -78,7 +78,7 @@ export default function Landing() {
           <article>
             <span className="num">2</span>
             <h3>Call the play</h3>
-            <p>Quick Out to stop the clock, Dig for a chunk, a Deep Shot, or hand it off. Then watch it unfold in 3D.</p>
+            <p>18 real concepts (Levels, Flood, Mesh, Smash, Four Verts, QB Blast…). Set your read progression, then watch your QB work it in 3D.</p>
           </article>
           <article>
             <span className="num">3</span>
@@ -103,6 +103,11 @@ export default function Landing() {
           <span className="mode-emoji">🔥</span>
           <h3>Survivor</h3>
           <p>Win to stay alive. Each game gets harder.{surv.best ? ` Your best: ${surv.best}.` : ''}</p>
+        </Link>
+        <Link to="/play?mode=defense" className="mode-card defense">
+          <span className="mode-emoji">🛡️</span>
+          <h3>Defense</h3>
+          <p>You just took the lead. Call coverages, disguise your looks and stop their two-minute drive.</p>
         </Link>
         <Link to="/h2h" className="mode-card h2h">
           <span className="mode-emoji">⚔️</span>

@@ -6,7 +6,7 @@ import * as THREE from 'three'
 export const FIELD_WIDTH = 53.33
 const PX = 16 // canvas pixels per yard
 
-function drawField(home, away) {
+function drawField(home, away, mid = home) {
   const w = Math.round(FIELD_WIDTH * PX)
   const h = 120 * PX
   const c = document.createElement('canvas')
@@ -76,28 +76,28 @@ function drawField(home, away) {
   g.scale(1, -1)
   g.beginPath()
   g.arc(0, 0, 5 * PX, 0, Math.PI * 2)
-  g.fillStyle = home.endzone
+  g.fillStyle = mid.endzone
   g.fill()
   g.lineWidth = 0.4 * PX
   g.strokeStyle = '#ffffff'
   g.stroke()
   g.font = `900 ${3.4 * PX}px "Arial Black", Arial, sans-serif`
-  g.fillStyle = home.text
-  g.fillText(home.abbr, 0, 0.2 * PX)
+  g.fillStyle = mid.text
+  g.fillText(mid.abbr, 0, 0.2 * PX)
   g.restore()
   return c
 }
 
-export function Field({ home, away, los, firstDown }) {
+export function Field({ home, away, midfield, los, firstDown }) {
   const texture = useMemo(() => {
-    const t = new THREE.CanvasTexture(drawField(home, away))
+    const t = new THREE.CanvasTexture(drawField(home, away, midfield ?? home))
     t.colorSpace = THREE.SRGBColorSpace
     t.anisotropy = 8
     // The broadcast camera looks down +z, which puts world +x on screen-left; mirror so text reads correctly.
     t.wrapS = THREE.RepeatWrapping
     t.repeat.x = -1
     return t
-  }, [home, away])
+  }, [home, away, midfield])
 
   return (
     <group>

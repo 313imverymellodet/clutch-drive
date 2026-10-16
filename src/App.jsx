@@ -13,8 +13,9 @@ import { MuteButton } from './ui/GameUI'
 
 const Game = lazy(() => import('./pages/Game'))
 const H2H = lazy(() => import('./pages/H2H'))
+const Defend = lazy(() => import('./pages/Defend'))
 
-const MODE_LABEL = { daily: 'Daily Drive', survivor: 'Survivor', practice: 'Practice', h2h: 'Head-to-Head' }
+const MODE_LABEL = { daily: 'Daily Drive', survivor: 'Survivor', practice: 'Practice', defense: 'Defense', h2h: 'Head-to-Head' }
 
 export default function App() {
   const { path, query } = useRoute()
@@ -24,7 +25,7 @@ export default function App() {
     page = (
       <Shell title={MODE_LABEL[mode] ?? 'Daily Drive'} mode={mode}>
         <Suspense fallback={<div className="loading">Lacing up cleats…</div>}>
-          <Game mode={mode} key={mode} />
+          {mode === 'defense' ? <Defend daily={query.get('daily') === '1'} key={`d${query.get('daily')}`} /> : <Game mode={mode} key={mode} />}
         </Suspense>
       </Shell>
     )
@@ -63,7 +64,7 @@ function Shell({ title, mode, children }) {
         </Link>
         <div className="top-right">
           <nav className="tabs">
-            {['daily', 'survivor', 'practice', 'h2h'].map((m) => (
+            {['daily', 'survivor', 'practice', 'defense', 'h2h'].map((m) => (
               <Link key={m} to={m === 'h2h' ? '/h2h' : `/play?mode=${m}`} className={mode === m ? 'on' : ''}>
                 {m === 'h2h' ? 'H2H' : MODE_LABEL[m].replace(' Drive', '')}
               </Link>

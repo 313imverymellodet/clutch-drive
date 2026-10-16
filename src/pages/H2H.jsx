@@ -3,7 +3,9 @@ import { Canvas } from '@react-three/fiber'
 import PlayScene from '../scenes/PlayScene'
 import { COVERAGES, PLAYS, PlaySim } from '../sim/playSim'
 import { TEAM_BY_ABBR } from '../data/nflTeams'
-import { coachTip, fmtBallOn, fmtClock, tendencies } from '../game/drive'
+import { coachTip, defenseTip, fmtBallOn, fmtClock } from '../game/drive'
+import { FAMILIES } from '../sim/playbook'
+import { DefensePicker, Playbook } from '../ui/Playbook'
 import {
   COVERAGE_IDS,
   HALF_PAUSE_MS,
@@ -18,20 +20,12 @@ import {
 } from '../game/h2h'
 import { hostRoom, joinRoom, makeCode, normalizeCode } from '../net/room'
 import { load, save } from '../game/storage'
-import { DefenseRead, DriveStrip, FieldBar, PlayCards, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
+import { DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
 import { TeamSelect } from '../ui/TeamSelect'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 
 const SITE = typeof location !== 'undefined' ? location.origin : ''
-const COVER_BLURB = {
-  cover1: 'Man-to-man, one safety deep. Stops the run and quick game.',
-  cover2: 'Two deep halves, corners sit in the flats. Kills the deep ball.',
-  cover3: 'Three deep, four under. Solid against everything, soft in the seams.',
-  blitz: 'Send six, nobody deep. Stuffs runs; risky against a deep shot.',
-  prevent: 'Everyone deep. Gives up short stuff, never the big play.',
-}
-
 // ------------------------------------------------------------------ connection / lobby
 export default function H2H({ room: roomParam }) {
   const [team, setTeam] = useState(() => load('cd.h2h.team', 'MIN'))
@@ -322,7 +316,7 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
     if (m.phase !== 'live' || !m.snap || lastSnap.current === m.snap.id) return
     lastSnap.current = m.snap.id
     const sn = m.snap
-    sim.reset({ play: sn.play, seed: sn.seed, los: sn.los, toGo: sn.toGo, coverage: sn.coverage, situation: { clock: sn.clock } })
+    sim.reset({ play: sn.play, seed: sn.seed, los: sn.los, toGo: sn.toGo, coverage: sn.coverage, situation: { clock: sn.clock }, reads: sn.reads, flip: sn.flip })
     sim.snap()
     setPreview(null)
     setSimKey((k) => k + 1)
@@ -350,13 +344,12 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
     sfx.click()
     act({ type: 'def', call: draft.call, shown: draft.shown ?? draft.call, key: draft.key })
   }
-  const callPlay = (play) => {
+  const callPlay = (play, reads, flip) => {
     unlock()
-    act({ type: 'off', play })
+    act({ type: 'off', play, reads, flip })
   }
 
   const shownNow = m.defCall?.shown ?? 'cover3'
-  const scout = tendencies(d)
   const offName = iAmOffense ? 'You' : 'They'
   const firstDownZ = Math.min(d.ballOn + d.toGo, 100) - 50
   const inPlay = m.phase === 'live' || m.phase === 'result'
@@ -402,7 +395,13 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
 
       <div className="hud-bottom">
         {m.phase === 'def-call' && !iAmOffense && (
-          <DefensePicker draft={draft} setDraft={setDraft} onLock={lockDefense} scout={scout} drive={d} />
+          <DefensePicker
+            draft={draft}
+            setDraft={setDraft}
+            onLock={lockDefense}
+            title={`Call the defense · ${['1st', '2nd', '3rd', '4th'][d.down - 1]} & ${d.ballOn + d.toGo >= 100 ? 'Goal' : d.toGo}`}
+            scoutLine={defenseTip(d)}
+          />
         )}
         {m.phase === 'def-call' && iAmOffense && (
           <WaitCard title="The defense is calling its coverage" left={left}>
@@ -426,14 +425,14 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
             <FieldBar drive={d} offense={offense} defense={defense} />
             {d.clockRunning && <div className="hurry">⏱ Clock is running: −15s when you snap it (timeout stops it)</div>}
             <DefenseRead shown={shownNow} tip={`${coachTip(d, shownNow)} (Could be a disguise.)`} />
-            <PlayCards onCall={callPlay} onPreview={setPreview} />
+            <Playbook onSnap={callPlay} onPreview={setPreview} />
           </div>
         )}
         {m.phase === 'off-call' && !iAmOffense && m.defCall && (
           <WaitCard title="Locked in. Waiting for their call…" left={left}>
             You're in <b>{COVERAGES[m.defCall.call].name}</b>
             {m.defCall.shown !== m.defCall.call && <>, showing <b>{COVERAGES[m.defCall.shown].short}</b></>}
-            {m.defCall.key && <>, keying on the <b>{PLAYS[m.defCall.key.play].label}</b></>}.
+            {m.defCall.key && <>, guessing <b>{FAMILIES[m.defCall.key.family]?.label ?? 'a play'}</b></>}.
           </WaitCard>
         )}
         {m.phase === 'result' && reveal && <div className="reveal">🎭 {reveal}</div>}
@@ -476,52 +475,6 @@ function WaitCard({ title, left, children }) {
         {left > 0 && <span className="wait-left">{Math.ceil(left / 1000)}s</span>}
       </div>
       <p className="lede small">{children}</p>
-    </div>
-  )
-}
-
-function DefensePicker({ draft, setDraft, onLock, scout, drive }) {
-  const set = (patch) => setDraft((d) => ({ ...d, ...patch }))
-  const called = Object.entries(scout.share).filter(([, v]) => v > 0.01).sort((a, b) => b[1] - a[1])
-  return (
-    <div className="sheet defpick">
-      <div className="sheet-head">
-        <span className="sheet-title">
-          Call the defense <em>·</em> {['1st', '2nd', '3rd', '4th'][drive.down - 1]} & {drive.ballOn + drive.toGo >= 100 ? 'Goal' : drive.toGo}
-        </span>
-        {called.length > 0 && (
-          <span className="scout">Scouting: {called.map(([p, v]) => `${PLAYS[p].label} ${Math.round(v * 100)}%`).join(' · ')}</span>
-        )}
-      </div>
-      <div className="covs">
-        {COVERAGE_IDS.map((c) => (
-          <button key={c} className={`cov${draft.call === c ? ' on' : ''} ${c}`} onClick={() => set({ call: c, shown: draft.shown === c ? null : draft.shown })}>
-            <strong>{COVERAGES[c].name}</strong>
-            <span>{COVER_BLURB[c]}</span>
-          </button>
-        ))}
-      </div>
-      <div className="defopts">
-        <label className="team-select">
-          <span>🎭 Show them</span>
-          <select value={draft.shown ?? draft.call} onChange={(e) => set({ shown: e.target.value === draft.call ? null : e.target.value })}>
-            {COVERAGE_IDS.map((c) => (
-              <option key={c} value={c}>{c === draft.call ? `${COVERAGES[c].short} (no disguise)` : `${COVERAGES[c].short} (disguise)`}</option>
-            ))}
-          </select>
-        </label>
-        <div className="guess">
-          <span className="guess-label">🔮 Guess their play (right: you jump it · wrong: a step slow)</span>
-          <div className="chips">
-            {[null, 'out', 'dig', 'deep', 'run'].map((p) => (
-              <button key={p ?? 'none'} className={`chip${draft.key === p ? ' on' : ''}`} onClick={() => set({ key: p })}>
-                {p ? PLAYS[p].label : 'No guess'}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      <button className="btn primary big lock" onClick={onLock}>Lock it in</button>
     </div>
   )
 }

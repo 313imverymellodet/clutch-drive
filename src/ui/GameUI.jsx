@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import confetti from 'canvas-confetti'
 import { COVERAGES, PLAYS } from '../sim/playSim'
+import { FAMILIES } from '../sim/playbook'
 import { isMuted, onMuteChange, setMuted, sfx, unlock } from '../game/sound'
 import { downAndDistance, fmtBallOn, fmtClock, QUARTER_LABEL } from '../game/drive'
 
@@ -147,9 +148,9 @@ export function DefenseRead({ shown, tip, keyOn = null }) {
         <span className={`read-chip ${shown}`}>
           <b>D</b> {c.short}
         </span>
-        {keyOn && keyOn.s >= 0.55 && (
+        {keyOn && keyOn.s >= 0.5 && (
           <span className={`key-chip${keyOn.s >= 1 ? ' hot' : ''}`} title="The defense is anticipating this play">
-            👀 Keying: {PLAYS[keyOn.play].label}
+            👀 Keying: {FAMILIES[keyOn.family]?.label ?? PLAYS[keyOn.play]?.label}
           </span>
         )}
       </span>
@@ -182,6 +183,7 @@ export function headlineFor(result) {
   if (result.kind === 'interception') return { big: 'INTERCEPTED!', tone: 'bad' }
   if (result.kind === 'sack') return { big: 'SACKED!', tone: 'bad' }
   if (result.kind === 'incomplete') return { big: 'INCOMPLETE', tone: 'bad' }
+  if (result.how === 'blast' && result.gain >= 3) return { big: 'QB BLAST!', tone: result.first ? 'good' : 'ok' }
   if (result.first) return { big: 'FIRST DOWN!', tone: 'good' }
   if (result.gain <= 0) return { big: 'STUFFED!', tone: 'bad' }
   if (result.kind === 'out') return { big: `+${result.gain} · OUT OF BOUNDS`, tone: 'ok' }

@@ -22,7 +22,8 @@ import {
   todayKey,
 } from '../game/drive'
 import { load, save } from '../game/storage'
-import { Countdown, DefenseRead, DriveStrip, FieldBar, PlayCards, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
+import { Countdown, DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
+import { Playbook } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
@@ -139,7 +140,7 @@ export default function Game({ mode: rawMode }) {
     if (stage === 'call' && drive.clockRunning && secondsLeft <= 10 && secondsLeft > 0) sfx.tick()
   }, [secondsLeft, stage, drive.clockRunning])
 
-  const callPlay = (playId) => {
+  const callPlay = (playId, reads = null, flip = false) => {
     let d = drive
     // getting lined up takes time when the clock is running
     if (d.clockRunning) {
@@ -157,7 +158,7 @@ export default function Game({ mode: rawMode }) {
     sim.camMode = 'broadcast'
     sim.timeScale = 1
     unlock()
-    sim.reset({ play: playId, seed, los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, difficulty })
+    sim.reset({ play: playId, seed, los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, difficulty, reads, flip })
     sim.snap()
     setPreview(null)
     applied.current = null
@@ -202,7 +203,7 @@ export default function Game({ mode: rawMode }) {
   }
 
   const replay = () => {
-    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty })
+    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0 })
     sim.camMode = 'close'
     sim.timeScale = 0.45
     sim.snap()
@@ -211,7 +212,7 @@ export default function Game({ mode: rawMode }) {
     setStage('live')
   }
 
-  // keyboard: Enter/Space = take the field / next play, R = replay, T = timeout (1-4 call plays, see PlayCards)
+  // keyboard: Enter/Space = take the field / next play, R = replay, T = timeout (1-6 pick a play, Enter snaps, F flips: see Playbook)
   useEffect(() => {
     const onKey = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('select, input')) return
@@ -318,7 +319,7 @@ export default function Game({ mode: rawMode }) {
             <FieldBar drive={drive} offense={offense} defense={defense} />
             {drive.clockRunning && <div className="hurry">⏱ Clock is running, call it fast!</div>}
             <DefenseRead shown={coverage.shown} keyOn={coverage.key} tip={coachTip(drive, coverage.shown, coverage.key)} />
-            <PlayCards onCall={callPlay} onPreview={setPreview} />
+            <Playbook onSnap={callPlay} onPreview={setPreview} />
           </div>
         )}
 
@@ -419,6 +420,7 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
           {mode === 'survivor' && won && <button className="btn" onClick={onNextSurvivor}>Next game →</button>}
           {mode === 'survivor' && !won && <button className="btn" onClick={onNewRun}>Start a new run</button>}
           {mode === 'practice' && <button className="btn" onClick={onPractice}>New practice drive</button>}
+          {mode === 'daily' && won && <button className="btn primary" onClick={() => navigate('/play?mode=defense&daily=1')}>🛡️ Now hold the lead</button>}
           {mode === 'daily' && <button className="btn" onClick={() => navigate('/play?mode=survivor')}>Play Survivor</button>}
         </div>
         {mode === 'daily' && (

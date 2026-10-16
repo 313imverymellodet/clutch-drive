@@ -64,8 +64,8 @@ await Promise.all([host.waitForSelector('.duel-strip', { timeout: 30000 }), gues
 console.log('connected')
 await sleep(1500)
 
-const covs = ['cover2', 'blitz', 'cover3', 'cover1', 'prevent']
-const plays = ['Dig', 'Quick Out', 'HB Dive', 'Deep Shot']
+const covs = ['cover2', 'blitz', 'tampa2', 'cover1', 'firezone', 'cover4', 'cover3', 'prevent']
+const plays = ['Levels', 'Slant-Flat', 'QB Blast', 'Four Verts', 'Mesh', 'Outside Zone', 'Smash', 'Stick']
 let defN = 0
 let offN = 0
 let mismatches = 0
@@ -78,14 +78,14 @@ while (Date.now() < deadline) {
   for (const [name, p] of [['host', host], ['guest', guest]]) {
     const state = await p.evaluate(() => ({
       def: !!document.querySelector('.defpick'),
-      off: !!document.querySelector('.plays'),
+      off: !!document.querySelector('.playbook'),
       half: /Drive 1 is done/.test(document.querySelector('.modal h2')?.textContent ?? ''),
     }))
     if (state.def) {
       const cov = covs[defN % covs.length]
       await p.evaluate((c) => document.querySelector(`.cov.${c}`)?.click(), cov)
       if (defN % 3 === 1) await p.select('.defopts select', 'cover3') // disguise it
-      if (defN % 2 === 0) await clickText(p, ['Dig', 'HB Dive', 'Deep Shot'][defN % 3])
+      if (defN % 2 === 0) await clickText(p, ['Quick', 'Intermediate', 'Deep', 'Run'][defN % 4])
       if (!shots.has(`${name}-def`)) {
         await sleep(400)
         await shot(p, `${name}-defense-picker`)
@@ -101,10 +101,18 @@ while (Date.now() < deadline) {
         shots.add(`${name}-off`)
       }
       const play = plays[offN % plays.length]
-      // touch screens arm on the first tap and snap on the second
-      await clickText(p, play)
-      await sleep(150)
-      if (name === 'guest') await clickText(p, play)
+      // find the play's tab, select the card, snap it
+      await p.evaluate(async (name) => {
+        const find = () => [...document.querySelectorAll('.pb-card')].find((b) => b.querySelector('strong')?.textContent.trim() === name)
+        for (const tab of [null, ...document.querySelectorAll('.pb-tab')]) {
+          tab?.click()
+          await new Promise((r) => setTimeout(r, 60))
+          const card = find()
+          if (card) return card.click()
+        }
+      }, play)
+      await sleep(300)
+      await clickText(p, 'Snap it')
       offN++
       // both screens should show the same result banner for this snap (unless the clock ran out before the snap)
       const settled = () => !!document.querySelector('.banner-sub') || !!document.querySelector('.modal')

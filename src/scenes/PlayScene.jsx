@@ -18,7 +18,7 @@ const tmpTarget = new THREE.Vector3()
  * Draws a PlaySim. `version` changes whenever the sim is reset so the 22 characters are rebuilt.
  * offense/defense are NFL team objects from src/data/nflTeams.js.
  */
-export default function PlayScene({ sim, version, offense, defense, onStatus, onEvent, los = LOS, firstDown = null, preview = null }) {
+export default function PlayScene({ sim, version, offense, defense, onStatus, onEvent, los = LOS, firstDown = null, preview = null, homeIsDefense = false }) {
   const gltf = useGLTF(MODEL_URL)
   const { camera, size, gl, scene } = useThree()
   const ballRef = useRef()
@@ -94,7 +94,9 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
     if (status !== lastStatus.current) {
       lastStatus.current = status
       onStatus({ phase: sim.phase, message: sim.message, result: sim.result })
-      setExcited(sim.phase !== 'presnap' && sim.phase !== 'live' && !!sim.result?.good)
+      // the home crowd cheers for the home side (in Defense mode that's the defense)
+      const good = !!sim.result?.good
+      setExcited(sim.phase !== 'presnap' && sim.phase !== 'live' && !!sim.result && (homeIsDefense ? !good : good))
     }
   }
 
@@ -117,8 +119,8 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
       <fog attach="fog" args={['#cfe9ff', 110, 420]} />
       <hemisphereLight args={['#eef8ff', '#4a7d42', 1.5]} />
       <directionalLight position={[8, 14, -6]} intensity={2.1} />
-      <Stadium home={offense} away={defense} excited={excited} />
-      <Field home={offense} away={defense} los={los} firstDown={firstDown} />
+      <Stadium home={homeIsDefense ? defense : offense} away={homeIsDefense ? offense : defense} excited={excited} />
+      <Field home={offense} away={defense} midfield={homeIsDefense ? defense : offense} los={los} firstDown={firstDown} />
       {actors.map((a) => (
         <primitive key={a.root.uuid} object={a.root} />
       ))}
@@ -127,7 +129,14 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
       ))}
       <Football ref={ballRef} />
       {preview && sim.phase === 'presnap' && (
-        <RouteArt play={preview} los={sim.los} toGo={sim.firstDown - sim.los} coverage={sim.coverage} />
+        <RouteArt
+          play={typeof preview === 'string' ? preview : preview.play}
+          reads={preview.reads ?? null}
+          flip={!!preview.flip}
+          los={sim.los}
+          toGo={sim.firstDown - sim.los}
+          coverage={sim.coverage}
+        />
       )}
     </>
   )

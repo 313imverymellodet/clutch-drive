@@ -6,6 +6,7 @@ You're trailing late in the 4th with the clock running. Call the plays and win i
 - **Daily Drive** (`/play?mode=daily`): the same scenario and same play outcomes for everyone each day, with a Wordle-style emoji result to share.
 - **Survivor** (`/play?mode=survivor`): win to stay alive; each game gets harder. Best streak is saved.
 - **Practice** (`/play?mode=practice`): pick any two of the 32 teams and run drives as often as you like.
+- **Defense** (`/play?mode=defense`): you just took the lead; stop the AI's two-minute drive. Call one of 8 coverages each snap, disguise your shell, and guess the concept. Win the Daily Drive and you get a bonus "hold the lead" round.
 - **Head-to-Head** (`/h2h`): duel a friend online. Create a match, send the link, and each of you gets one drive from the same late-game spot. On every snap the defense locks in a coverage (it can disguise its look and guess the play), then the offense reads the look and calls a play. Best drive wins.
 - **Locker Room** (`/locker`): every animation in any uniform.
 
@@ -18,29 +19,29 @@ npm install
 npm run dev          # http://localhost:5173
 ```
 
-- Before each snap the defense shows a look (Cover 1/2/3, blitz or prevent) and the coach suggests what beats it. Hover a play (or tap it once on a phone) to see its routes drawn on the field. Keys: 1–4 call plays, T timeout, Enter next play, R replay.
-- In a game, call one of four plays:
-  - **Quick Out**: a short throw to the slot, who steps out of bounds to stop the clock (6–9 yards).
-  - **Dig**: a safe pass to WR1 over the middle (usually 14–23 yards).
-  - **Deep Shot**: boom or bust to WR2 on a go route (about half fall incomplete; completions go for 35+).
-  - **HB Dive**: a handoff up the A gap (2–7 yards).
-  - Outcomes are seeded, so each snap plays out differently. There are broken tackles, pass breakups, overthrows, touchdowns and runs out of bounds. **Replay** re-runs the same play in slow motion with a close-up camera.
-- **Clock rules:** incompletions and runs out of bounds stop the clock. If you're tackled in bounds, the clock runs in real time while you pick the next play, with a minimum 8 seconds to line up. Timeouts stop it.
-
-Team names and colors are approximations, with no logos. Fan-made, not affiliated with the NFL.
+- **Playbook:** 18 concepts across four families, with a route for every receiver. Any play can be flipped (⇄).
+  - **Quick:** Quick Out, Slant-Flat, Stick, Hitches.
+  - **Intermediate:** Dig, Levels, Flood, Mesh, Curl-Flat, Smash, Y-Cross.
+  - **Deep:** Deep Shot, Four Verts, Post-Wheel.
+  - **Run:** HB Dive, Outside Zone, HB Draw, **QB Blast** (QB power behind a lead block).
+- **Read progression:** pick your 1st look, 2nd look and check-down. After the snap the QB works them in that order: he throws to the first open man, moves on if covered, checks down, scrambles or throws it away under pressure, and sometimes stares down a receiver (that's how interceptions happen).
+- **Calling a play:** tap a play to see its routes and numbered reads on the field, then tap again (or SNAP) to run it. Keys: 1–6 pick, Enter snaps, F flips, T timeout, R replay.
+- **Reading the defense:** the defense shows a shell before the snap. It's often a disguise, and it rotates into the real coverage at the snap. The coach suggests what grades out best against the look (from the play × coverage data), and the "Beats Cover X" tags on the play cards come from the same data.
+- **Clock rules:** incompletions and runs out of bounds stop the clock. If you're tackled in bounds, the clock runs while you pick the next play (minimum 8 seconds). Timeouts stop it.
 
 ## Football AI
 
-The defense is a real opponent (`src/sim/playSim.js`):
+Both sides are real coordinators (`src/sim/playSim.js`, `src/sim/aiOffense.js`):
 
-- **Play-calling:** `chooseDefense` picks a coverage from down, distance, clock and field position, and disguises it about 12% of the time (more in later Survivor games).
-- **Coverage:** man defenders read the receiver a beat late and extrapolate, so they stay with straight routes but get beat on sharp breaks. Some reps they "blanket" their man. Zone defenders drop to landmarks, squeeze receivers in their area, and break on the ball after the throw.
-- **Pass rush:** blockers pair up with rushers; rushers win their reps after a random time, and a free rusher shoots a gap. The QB senses pressure and throws early (less accurate), or gets sacked. If the defense shows blitz, the back and tight end stay in to block.
-- **After the catch:** the carrier scores a fan of directions for open space, defenders take intercept angles, teammates peel off to block, and tackles can be broken (especially arm tackles from behind).
+- **Defensive play-calling:** `chooseDefense` picks from Cover 1/2/3/4, Tampa 2, Fire Zone (zone blitz), Cover 0 and Prevent based on down, distance, clock and field position. It leans toward coverages that stop the concept families you've been calling.
+- **Disguises:** it shows a different shell about 28% of the time, and much more often against an offense that keeps winning ("you've been reading us").
+- **Keying:** call the same family 2 of 3 snaps and the defense keys on it: faster reads, tighter coverage, and someone sitting in that family's window (flat squat, robber, deep help, loaded box). Guessing wrong costs them a step, so mixing it up pays off.
+- **Coverage behavior:** man defenders read receivers a beat late (they stay with straight lines but get beat on breaks), with a chance to "blanket" a man on any rep. Zones drop to landmarks, squeeze receivers, and break on the throw.
+- **Pass rush:** blockers pair up with rushers; free rushers shoot gaps; the QB feels pressure.
+- **Offensive coordinator** (Defense mode, and head-to-head when a shot clock runs out): it reads your shell but weighs the chance it's a disguise, using the play × coverage matrix. It manages the clock (sideline throws, timeouts) and avoids becoming predictable.
+- **After the catch:** the ball carrier looks for open space, defenders take intercept angles, receivers stalk-block, and tackles can be broken (QB Blast breaks more).
 
-- **It adapts to you:** the coordinator scouts your recent calls (weighted toward recent plays and the ones that burned it) and leans toward coverages that stop them. Call the same play 2 of 3 snaps and it starts **keying** on it: quicker reads, tighter coverage, and a defender sitting in that play's window. A wrong key leaves them a step slow, so mixing it up after a streak pays off. `node scripts/spam.mjs` measures both effects.
-
-`node scripts/outcomes.mjs` prints the balance table of every play against every coverage. Roughly: Dig beats man and Cover 3; Quick Out beats zones and stops the clock; Deep Shot beats the blitz and Cover 1 but gets picked off against Prevent and two-deep zones; HB Dive works against zones and gets stuffed by the blitz.
+`node scripts/outcomes.mjs [seeds] [--write]` prints every play against every coverage. `--write` regenerates `src/sim/counters.json`, which feeds both AIs, the coach and the play tags. `node scripts/spam.mjs` measures how fast repeated calls get shut down.
 
 ## Online head-to-head
 
@@ -86,6 +87,9 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | `src/game/sound.js` | Synthesized WebAudio sound effects (whistle, hits, catches, crowd) and mute |
 | `src/components/RouteArt.jsx` | Pre-snap route preview drawn on the turf |
 | `src/pages/H2H.jsx`, `src/game/h2h.js`, `src/net/room.js` | Head-to-head lobby and duel screen, match rules, peer-to-peer transport |
+| `src/sim/playbook.js`, `src/ui/Playbook.jsx` | The 18-play playbook data, and the play caller UI (tabs, diagrams, read progression, flip, defense picker) |
+| `src/sim/aiOffense.js`, `src/sim/counters.json` | Offensive coordinator AI, and the generated play × coverage matrix |
+| `src/pages/Defend.jsx` | Defense mode (hold the lead) |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |
@@ -99,7 +103,7 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 - In dev builds, `window.__sim` is the live sim. `__sim.camMode = 'close'` switches to a replay-style close-up camera; `__sim.timeScale = 0.25` gives slow motion.
 - `window.__advance(seconds)` steps the play and renders synchronously.
 - `node scripts/capture.mjs <dir> <w> <h> [broadcast|close] [dig|deep|run] [seed]` saves headless screenshots through a play (needs `npm run dev` running and Google Chrome installed).
-- `node scripts/e2e.mjs <dir> <w> <h> [daily|survivor|practice] [plays]` plays a full drive by clicking the real UI and screenshots each step.
+- `node scripts/e2e.mjs <dir> <w> <h> [daily|survivor|practice|defense] [plays]` plays a full drive by clicking the real UI and screenshots each step. Plays are names like `Levels,Mesh|flip,QB Blast`.
 - `node scripts/make-assets.mjs` regenerates `public/og.png` (social card) and the PNG app icons.
 - `node scripts/check-errors.mjs [path]` loads a page and prints any errors.
 - `node scripts/outcomes.mjs [seeds]` simulates every play call across many seeds and prints the yardage spread, for balance tuning.

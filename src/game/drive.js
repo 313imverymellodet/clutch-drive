@@ -2,6 +2,7 @@ import { NFL_TEAMS } from '../data/nflTeams'
 import { BRAND, LAUNCH_DATE } from '../brand'
 import { PLAYS, chooseDefense } from '../sim/playSim'
 import { FAMILIES } from '../sim/playbook'
+import { bestPlaysVs } from '../sim/aiOffense'
 
 /*
  * The drive: game clock, downs, field position, score, win/lose.
@@ -228,18 +229,7 @@ export function defenseFor(d, difficulty = 0) {
   return chooseDefense({ down: d.down, toGo: d.toGo, clock: d.clock, ballOn: d.ballOn }, rngFrom(`${d.id}|def|${n}`), difficulty, tendencies(d))
 }
 
-const COACH = {
-  blitz: 'Blitz look, nobody deep! Get it out quick (Slant-Flat, Quick Out) or take a shot. Don\'t run into it.',
-  cover1: 'Man coverage. Mesh, Slant-Flat and the Dig beat man; the deep ball has a chance.',
-  cover2: 'Two safeties deep. Smash, Levels and the Dig attack the holes; runs work too.',
-  tampa2: 'Two-deep look with a linebacker in the middle. Hit the sidelines: Smash, Curl-Flat, Flood.',
-  cover3: 'Single-high. Flood and Curl-Flat stress the flats; the seams are open in Four Verts.',
-  cover4: 'Quarters: four deep. Take the underneath stuff (Stick, Hitches, Mesh) or run it.',
-  firezone: 'Pressure look. Hot throws win: Slant-Flat, Stick, Quick Out, or a Draw.',
-  prevent: 'Prevent D is giving you the short stuff. Hitches, Curl-Flat or a run. Avoid the deep ball.',
-}
-
-/** One line of advice for the current situation and the look the defense is showing. */
+/** One line of advice for the current situation and the look the defense is showing (from the play x coverage data). */
 export function coachTip(d, shown, key = null) {
   if (key && key.s >= 0.5) {
     const fam = FAMILIES[key.family]?.label.toLowerCase() ?? 'that'
@@ -248,7 +238,26 @@ export function coachTip(d, shown, key = null) {
       : `Careful: they're starting to key on your ${fam} game. Mix it up.`
   }
   const toGoal = 100 - d.ballOn
-  if (d.clockRunning && d.clock < 30 && toGoal > 15) return d.timeouts ? 'Clock is bleeding! Call a timeout or get out of bounds with the Quick Out.' : 'No timeouts left. The Quick Out stops the clock.'
-  if (d.down === 4) return `4th down, all or nothing. ${COACH[shown] ?? ""}`
-  return COACH[shown] ?? ''
+  if (d.clockRunning && d.clock < 30 && toGoal > 15) return d.timeouts ? 'Clock is bleeding! Call a timeout or get out of bounds (Quick Out, Curl-Flat, Flood).' : 'No timeouts left. Throw to the sideline to stop the clock.'
+  const short = toGoal <= 12
+  const best = bestPlaysVs(shown, 3, (id) => !(short && PLAYS[id].family === 'deep') && !(d.toGo >= 8 && d.down >= 3 && PLAYS[id].family === 'run'))
+  const names = best.map((id) => PLAYS[id].label).join(', ')
+  const pre = d.down === 4 ? '4th down, all or nothing. ' : ''
+  const ex = tendencies(d).exploit >= 0.5 ? " You're carving them up, so expect disguises." : ''
+  return `${pre}Best vs. this look: ${names}.${ex}`
+}
+
+/** Coach for when you're on defense: what this offense likes, and what the situation calls for. */
+export function defenseTip(d) {
+  const t = tendencies(d)
+  const fams = Object.entries(t.share).filter(([, v]) => v > 0.3).sort((a, b) => b[1] - a[1])
+  const toGoal = 100 - d.ballOn
+  const parts = []
+  if (fams.length) parts.push(`They lean ${FAMILIES[fams[0][0]].label.toLowerCase()} (${Math.round(fams[0][1] * 100)}% lately).`)
+  if (d.clock < 35 && toGoal > 30) parts.push('Clock is your friend: keep everything in front (Prevent, Cover 4).')
+  else if (d.down >= 3 && d.toGo >= 7) parts.push("Long yardage: they'll throw. Pressure (Fire Zone) or two-deep zones.")
+  else if (d.toGo <= 2) parts.push('Short yardage: load the box (Cover 1, Blitz) and guess run.')
+  else if (toGoal <= 12) parts.push('Red zone: tight man coverage, no prevent.')
+  if (!parts.length) parts.push('Disguise your look: offenses read the shell before the snap.')
+  return parts.join(' ')
 }

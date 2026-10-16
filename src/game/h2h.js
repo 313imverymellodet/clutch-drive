@@ -1,5 +1,7 @@
 import { applyResult, callTimeout, hashString, newDrive, rngFrom, tendencies, tickClock } from './drive'
-import { PLAYS, chooseDefense } from '../sim/playSim'
+import { COVERAGE_IDS as COVS, PLAYS, chooseDefense } from '../sim/playSim'
+import { FAMILIES, eligibleFor } from '../sim/playbook'
+import { chooseOffense } from '../sim/aiOffense'
 
 /*
  * Head-to-head duel rules. Pure functions; the host's browser is the referee.
@@ -15,7 +17,7 @@ export const SHOT_CLOCK_MS = 15000
 export const HUDDLE_RUNOFF = 15 // seconds a running clock burns between snaps
 export const RESULT_PAUSE_MS = 3600
 export const HALF_PAUSE_MS = 5200
-export const COVERAGE_IDS = ['cover1', 'cover2', 'cover3', 'blitz', 'prevent']
+export const COVERAGE_IDS = COVS
 
 const other = (role) => (role === 'host' ? 'guest' : 'host')
 export const offenseRole = (m) => m.order[m.half]
@@ -95,10 +97,9 @@ function autoDefense(m) {
   return chooseDefense({ down: d.down, toGo: d.toGo, clock: d.clock, ballOn: d.ballOn }, rngFrom(`${m.seed}|auto|${m.half}|${m.n}`), 1, tendencies(d))
 }
 function autoOffense(m) {
-  const best = { blitz: 'deep', cover1: 'dig', cover2: 'dig', cover3: 'out', prevent: 'run' }
-  const pick = best[m.defCall?.shown ?? 'cover3']
-  const key = tendencies(drive(m)).key
-  return key?.play === pick ? 'out' : pick
+  const d = drive(m)
+  const history = d.plays.filter((p) => PLAYS[p.playId]).map((p) => p.playId)
+  return chooseOffense(d, m.defCall?.shown ?? 'cover3', rngFrom(`${m.seed}|autoff|${m.half}|${m.n}`), { history })
 }
 
 function endDriveIfOver(m) {
@@ -126,7 +127,7 @@ export function reduce(match, action, actor) {
       if (m.phase !== 'def-call' || (actor !== defR && actor !== 'ref')) return match
       const call = COVERAGE_IDS.includes(action.call) ? action.call : 'cover3'
       const shown = COVERAGE_IDS.includes(action.shown) ? action.shown : call
-      const key = PLAYS[action.key] ? { play: action.key, s: 0.8, guess: true } : action.autoKey ?? null
+      const key = FAMILIES[action.key] ? { family: action.key, s: 0.8, guess: true } : action.autoKey ?? null
       m.defCall = { call, shown, key }
       m.phase = 'off-call'
       break
@@ -149,9 +150,13 @@ export function reduce(match, action, actor) {
       }
       nd = { ...nd, clockRunning: false }
       m.drives[m.half] = nd
+      const eligible = eligibleFor(action.play)
+      const reads = Array.isArray(action.reads) ? action.reads.filter((k) => eligible.includes(k)).slice(0, 3) : null
       m.snap = {
         id: `${m.seed}-${m.half}-${m.n}`,
         play: action.play,
+        reads: reads?.length ? reads : null,
+        flip: !!action.flip,
         coverage: m.defCall,
         seed: hashString(`${m.seed}|${m.half}|${m.n}|${action.play}`),
         los: nd.ballOn - 50,
@@ -193,7 +198,10 @@ export function reduce(match, action, actor) {
         const auto = autoDefense(m)
         return reduce(match, { type: 'def', call: auto.call, shown: auto.shown, autoKey: auto.key }, 'ref')
       }
-      if (m.phase === 'off-call') return reduce(match, { type: 'off', play: autoOffense(m) }, 'ref')
+      if (m.phase === 'off-call') {
+        const auto = autoOffense(m)
+        return reduce(match, { type: 'off', play: auto.play, flip: auto.flip }, 'ref')
+      }
       return match
     }
     default:
