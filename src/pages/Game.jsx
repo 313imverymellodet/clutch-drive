@@ -22,7 +22,9 @@ import {
   todayKey,
 } from '../game/drive'
 import { load, save } from '../game/storage'
-import { Countdown, DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
+import { Countdown, DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, ShareButton, WPChart, WinProbMeter, wpTrail } from '../ui/GameUI'
+import { winProb } from '../game/winprob'
+import { DATA_CREDIT, momentForDay, momentForSurvivor, momentLabel, realOutcome, scenarioFromMoment } from '../game/moments'
 import { Playbook } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
@@ -46,8 +48,9 @@ export default function Game({ mode: rawMode }) {
   const dailySaved = mode === 'daily' ? load(`cd.daily.${dateKey}`, null) : null
 
   const scenario = useMemo(() => {
-    if (mode === 'daily') return makeScenario(`daily-${dateKey}`)
-    if (mode === 'survivor') return makeScenario(`surv-${survivor.runId}-${survivor.game}`, { difficulty: survivor.game })
+    // Daily and Survivor are real NFL moments; Practice is a made-up spot with the teams you pick
+    if (mode === 'daily') return scenarioFromMoment(momentForDay(dateKey), `daily-${dateKey}`)
+    if (mode === 'survivor') return scenarioFromMoment(momentForSurvivor(survivor.runId, survivor.game), `surv-${survivor.runId}-${survivor.game}`)
     return makeScenario(`practice-${practice.n}`, { offense: practice.offense, defense: practice.defense })
   }, [mode, dateKey, survivor.runId, survivor.game, practice.n, practice.offense, practice.defense])
 
@@ -269,6 +272,7 @@ export default function Game({ mode: rawMode }) {
   const savedDaily = mode === 'daily' ? load(`cd.daily.${dateKey}`, null) : null
   const firstDownZ = Math.min(drive.ballOn + drive.toGo, 100) - 50
   const inPlay = stage === 'live' || stage === 'result'
+  const trail = wpTrail(drive)
   void simKey // re-render trigger after sim.reset
 
   return (
@@ -291,6 +295,11 @@ export default function Game({ mode: rawMode }) {
 
       <div className="hud-top">
         <Scorebug drive={drive} offense={offense} defense={defense} clock={clockShown} running={stage === 'call' && drive.clockRunning} />
+        <WinProbMeter
+          p={stage === 'result' || stage === 'over' ? trail.at(-1) : winProb({ ...drive, clock: clockShown })}
+          last={stage === 'result' && trail.length > 1 ? trail.at(-2) : null}
+          team={offense}
+        />
         <DriveStrip plays={drive.plays} />
         {replaying && <div className="replay-badge">REPLAY</div>}
       </div>
@@ -359,12 +368,14 @@ function IntroCard({ mode, day, drive, offense, defense, onGo, practice, onTeams
   return (
     <div className="intro card">
       <div className="eyebrow">{mode === 'daily' ? `Daily Drive #${day}` : mode === 'survivor' ? `Survivor · Game ${drive.id.split('-').pop() * 1 + 1}` : 'Practice'}</div>
+      {drive.moment && <span className="moment-tag">📅 Real moment · {momentLabel(drive.moment)}</span>}
       <h2>
         <span style={{ color: offense.endzone === '#FFFFFF' ? offense.stripe : offense.endzone }}>{offense.city} {offense.name}</span> trail by {deficit}
       </h2>
       <p className="lede">
         {fmtClock(drive.clock)} left in the 4th. Your ball on the {fmtBallOn(drive.ballOn)}, {drive.timeouts} timeout{drive.timeouts === 1 ? '' : 's'}.
         Only a touchdown wins it against the {defense.name}.
+        {drive.moment && <> In real life their win probability here was <b>{Math.round(drive.moment.wp * 100)}%</b>. Can you do better than what really happened?</>}
       </p>
       <ul className="rules">
         <li><b>Out of bounds</b> and <b>incompletions</b> stop the clock.</li>
@@ -385,7 +396,12 @@ function IntroCard({ mode, day, drive, offense, defense, onGo, practice, onTeams
 function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun, onPractice, onReplay }) {
   const won = drive ? drive.status === 'won' : saved?.status === 'won'
   const text = drive ? shareText(drive, { mode, day, streak: survivor.streak, url: SITE }) : saved?.text
-  const daily = load('cd.dailyStreak', { streak: 0, played: 0, wins: 0 })
+  // stats are saved by the parent right after this mounts, so re-read them a beat later
+  const [daily, setDaily] = useState(() => load('cd.dailyStreak', { streak: 0, played: 0, wins: 0 }))
+  useEffect(() => {
+    const id = setTimeout(() => setDaily(load('cd.dailyStreak', { streak: 0, played: 0, wins: 0 })), 50)
+    return () => clearTimeout(id)
+  }, [])
   return (
     <div className="modal-wrap">
       <div className={`modal ${won ? 'won' : 'lost'}`}>
@@ -399,6 +415,8 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
           <p className="lede">You already played today's drive.</p>
         )}
         <div className="grid-emoji">{drive ? drive.plays.map((p) => p.emoji).join('') : saved?.plays}</div>
+        {drive && <WPChart trail={[...wpTrail(drive), won ? 1 : 0]} />}
+        {drive?.moment && <History m={drive.moment} won={won} />}
 
         {mode === 'daily' && (
           <div className="stats">
@@ -428,6 +446,18 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
         )}
         <p className="fine"><Link to="/">← {BRAND.name} home</Link></p>
       </div>
+    </div>
+  )
+}
+
+function History({ m, won }) {
+  const realWon = m.won === 1
+  const verdict = won && !realWon ? '🔥 You beat history!' : won ? '✅ You matched history.' : realWon ? '📜 History wins this one.' : '🤝 Same as history.'
+  return (
+    <div className="history">
+      <b>What really happened · {momentLabel(m)}</b>
+      {realOutcome(m)} Their win probability was {Math.round(m.wp * 100)}% on this drive. <b style={{ display: 'inline', fontSize: 12 }}>{verdict}</b>
+      <p className="credit">{DATA_CREDIT} <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noreferrer">nflverse</a></p>
     </div>
   )
 }

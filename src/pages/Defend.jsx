@@ -6,7 +6,9 @@ import { chooseOffense } from '../sim/aiOffense'
 import { TEAM_BY_ABBR } from '../data/nflTeams'
 import { applyResult, callTimeout, dayNumber, defenseTip, downAndDistance, fmtBallOn, fmtClock, hashString, makeScenario, newDrive, rngFrom, tickClock, todayKey } from '../game/drive'
 import { load, save } from '../game/storage'
-import { FieldBar, Scorebug, ShareButton } from '../ui/GameUI'
+import { FieldBar, Scorebug, ShareButton, WPChart, WinProbMeter, wpTrail } from '../ui/GameUI'
+import { winProb } from '../game/winprob'
+import { momentForDay } from '../game/moments'
 import { TeamSelect } from '../ui/TeamSelect'
 import { DefensePicker } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
@@ -47,9 +49,10 @@ export default function Defend({ daily: isDaily }) {
   const dateKey = todayKey()
   const day = dayNumber(dateKey)
   const [prefs, setPrefs] = useState(() => load('cd.defense', { you: 'DEN', them: 'KC', n: 0, streak: 0, best: 0 }))
+  // the bonus round: today's real team scored, now they have to hold on
   const dailyTeams = useMemo(() => {
-    const d = makeScenario(`daily-${dateKey}`)
-    return { you: d.offense, them: d.defense }
+    const m = momentForDay(dateKey)
+    return { you: m.off, them: m.def }
   }, [dateKey])
   const teams = isDaily ? dailyTeams : prefs
   // difficulty is locked in when a drive starts; updating the streak after a win must not restart the drive
@@ -230,6 +233,12 @@ export default function Defend({ daily: isDaily }) {
 
       <div className="hud-top">
         <Scorebug drive={drive} offense={them} defense={you} clock={drive.clock} running={false} />
+        <WinProbMeter
+          p={1 - (stage === 'result' || stage === 'over' ? wpTrail(drive).at(-1) : winProb(drive))}
+          last={stage === 'result' && wpTrail(drive).length > 1 ? 1 - wpTrail(drive).at(-2) : null}
+          team={you}
+          label="YOUR WIN PROB"
+        />
         <div className="duel-strip">
           <span className="duel-role def">You: DEFENSE · up {lead}</span>
           {grid && <span>{grid}</span>}
@@ -303,6 +312,7 @@ export default function Defend({ daily: isDaily }) {
               {you.abbr} {drive.scoreDef} – {drive.scoreOff} {them.abbr}. {youWon ? reasonForDefense(drive.reason) : 'Touchdown. They win it.'}
             </p>
             <div className="grid-emoji">{grid}</div>
+            <WPChart trail={[...wpTrail(drive), youWon ? 0 : 1]} invert />
             {!isDaily && (
               <div className="stats">
                 <div><b>{prefs.streak}</b><span>Stop streak</span></div>

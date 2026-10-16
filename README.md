@@ -3,8 +3,8 @@
 Low-poly chibi football: characters built in Blender, played in the browser with Three.js / React Three Fiber.
 You're trailing late in the 4th with the clock running. Call the plays and win it with a touchdown.
 
-- **Daily Drive** (`/play?mode=daily`): the same scenario and same play outcomes for everyone each day, with a Wordle-style emoji result to share.
-- **Survivor** (`/play?mode=survivor`): win to stay alive; each game gets harder. Best streak is saved.
+- **Daily Drive** (`/play?mode=daily`): a **real NFL moment** each day (actual score, clock, field position and timeouts from a team that trailed by 4–6 late), the same for everyone, with a Wordle-style result to share. Afterward you see what really happened and whether you beat history.
+- **Survivor** (`/play?mode=survivor`): a run of real moments; each win digs into a tougher one (lower real win probability). Best streak is saved.
 - **Practice** (`/play?mode=practice`): pick any two of the 32 teams and run drives as often as you like.
 - **Defense** (`/play?mode=defense`): you just took the lead; stop the AI's two-minute drive. Call one of 8 coverages each snap, disguise your shell, and guess the concept. Win the Daily Drive and you get a bonus "hold the lead" round.
 - **Head-to-Head** (`/h2h`): duel a friend online. Create a match, send the link, and each of you gets one drive from the same late-game spot. On every snap the defense locks in a coverage (it can disguise its look and guess the play), then the offense reads the look and calls a play. Best drive wins.
@@ -28,6 +28,17 @@ npm run dev          # http://localhost:5173
 - **Calling a play:** tap a play to see its routes and numbered reads on the field, then tap again (or SNAP) to run it. Keys: 1–6 pick, Enter snaps, F flips, T timeout, R replay.
 - **Reading the defense:** the defense shows a shell before the snap. It's often a disguise, and it rotates into the real coverage at the snap. The coach suggests what grades out best against the look (from the play × coverage data), and the "Beats Cover X" tags on the play cards come from the same data.
 - **Clock rules:** incompletions and runs out of bounds stop the clock. If you're tackled in bounds, the clock runs while you pick the next play (minimum 8 seconds). Timeouts stop it.
+
+## Real moments and win probability
+
+`npm run data` (or `node scripts/build-moments.mjs <cacheDir> 2012 2026`) downloads nflverse play-by-play and builds two files:
+
+- `src/data/moments.json`: every first-down snap where a team trailed by 4–6 with 0:35–3:00 left on its own 10–45 yard line (343 moments from 2012 to now). It keeps teams, score, clock, field position, timeouts, nflverse's win probability, how the drive really ended, and the final score. **No player names or play descriptions are read.**
+- `src/data/wpModel.json`: a logistic win-probability model fit on about 14,000 real late-game plays. On held-out plays its log loss is 0.517 vs. 0.517 for nflverse's own model, and it's well calibrated. At the 343 moment starts it averages within 4.3 points of nflverse's numbers.
+
+The Daily walks through the moments in a fixed shuffle (no repeats for about 11 months). The live meter (`src/game/winprob.js`) updates after every snap and while the clock runs. The end screen shows the win-probability chart and "what really happened".
+
+Data credit (required by the CC BY 4.0 license): real game situations and the win-probability model come from [nflverse](https://github.com/nflverse/nflverse-data) play-by-play data. The credit appears on the landing page footer and the end-of-drive history card.
 
 ## Football AI
 
@@ -90,6 +101,7 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | `src/sim/playbook.js`, `src/ui/Playbook.jsx` | The 18-play playbook data, and the play caller UI (tabs, diagrams, read progression, flip, defense picker) |
 | `src/sim/aiOffense.js`, `src/sim/counters.json` | Offensive coordinator AI, and the generated play × coverage matrix |
 | `src/pages/Defend.jsx` | Defense mode (hold the lead) |
+| `scripts/build-moments.mjs`, `src/game/moments.js`, `src/game/winprob.js` | nflverse data pipeline, real moments, live win probability |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |

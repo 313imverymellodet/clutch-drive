@@ -1325,8 +1325,9 @@ export class PlaySim {
     this.deadTime = t
     this.tackleTime = t
     const spot = kind === 'touchdown' ? GOAL_LINE : c.pos.z
-    const gain = Math.round(spot - this.los)
     const first = spot >= this.firstDown
+    // just short of the sticks reads as short, not as a rounded-up first-down distance
+    const gain = Math.min(Math.round(spot - this.los), first || kind === 'touchdown' ? Infinity : Math.max(0, Math.round(this.firstDown - this.los) - 1))
     this.result = { good: kind === 'touchdown' || first || gain >= 4, kind, gain, first, spot, elapsed: t, how: this.how }
     const how = {
       catch: `Complete to #${c.number}`,

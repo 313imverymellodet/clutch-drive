@@ -20,7 +20,8 @@ import {
 } from '../game/h2h'
 import { hostRoom, joinRoom, makeCode, normalizeCode } from '../net/room'
 import { load, save } from '../game/storage'
-import { DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, ShareButton } from '../ui/GameUI'
+import { DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, ShareButton, WinProbMeter, wpTrail } from '../ui/GameUI'
+import { winProb } from '../game/winprob'
 import { TeamSelect } from '../ui/TeamSelect'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
@@ -377,6 +378,12 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
 
       <div className="hud-top">
         <Scorebug drive={d} offense={offense} defense={defense} clock={m.phase === 'live' ? Math.max(0, d.clock - Math.max(0, sim.t - 0.35)) : d.clock} running={false} />
+        <WinProbMeter
+          p={m.phase === 'result' ? wpTrail(d).at(-1) : winProb(d)}
+          last={m.phase === 'result' && wpTrail(d).length > 1 ? wpTrail(d).at(-2) : null}
+          team={offense}
+          label={iAmOffense ? 'YOUR WIN PROB' : 'THEIR WIN PROB'}
+        />
         <div className="duel-strip">
           <span className="duel-half">Drive {m.half + 1}/2</span>
           {net && <NetBadge net={net} />}

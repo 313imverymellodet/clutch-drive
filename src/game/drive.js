@@ -3,6 +3,7 @@ import { BRAND, LAUNCH_DATE } from '../brand'
 import { PLAYS, chooseDefense } from '../sim/playSim'
 import { FAMILIES } from '../sim/playbook'
 import { bestPlaysVs } from '../sim/aiOffense'
+import { winProb } from './winprob'
 
 /*
  * The drive: game clock, downs, field position, score, win/lose.
@@ -68,7 +69,7 @@ export function makeScenario(seedKey, { difficulty = 0, offense, defense } = {})
 }
 
 export function newDrive(sc) {
-  return {
+  const d = {
     ...sc,
     down: 1,
     toGo: Math.min(10, 100 - sc.ballOn),
@@ -77,6 +78,8 @@ export function newDrive(sc) {
     status: 'playing', // playing | won | lost
     reason: null,
   }
+  d.wp0 = winProb(d)
+  return d
 }
 
 export const ordinal = (n) => ['1st', '2nd', '3rd', '4th'][n - 1] ?? `${n}th`
@@ -99,7 +102,9 @@ export function downAndDistance(d) {
 /** Clock management before the snap: burn the huddle, or call timeout to stop it. */
 export function callTimeout(d) {
   if (!d.clockRunning || d.timeouts <= 0) return d
-  return { ...d, timeouts: d.timeouts - 1, clockRunning: false, plays: [...d.plays, { playId: 'timeout', emoji: '⏱️', text: 'Timeout' }] }
+  const next = { ...d, timeouts: d.timeouts - 1, clockRunning: false }
+  next.plays = [...d.plays, { playId: 'timeout', emoji: '⏱️', text: 'Timeout', wp: winProb(next) }]
+  return next
 }
 
 export function tickClock(d, seconds) {
@@ -119,6 +124,12 @@ function emojiFor(result) {
 
 /** Apply a finished play to the drive. elapsed = seconds from snap to whistle. */
 export function applyResult(d, playId, result) {
+  const next = applyResultRaw(d, playId, result)
+  next.plays[next.plays.length - 1].wp = winProb(next)
+  return next
+}
+
+function applyResultRaw(d, playId, result) {
   const elapsed = Math.max(2, (result.elapsed ?? 4) - 0.35)
   const clock = Math.max(0, d.clock - elapsed)
   const gain = result.kind === 'incomplete' ? 0 : result.gain
@@ -147,14 +158,15 @@ export function applyResult(d, playId, result) {
     return next
   }
 
-  next.ballOn = ballOn
   const line = d.ballOn + d.toGo
-  if (ballOn >= line) {
+  // the sim's exact spot decides the first down; rounding the gain must not move the chains
+  next.ballOn = result.first === false && ballOn >= line && line < 100 ? line - 1 : ballOn
+  if (next.ballOn >= line) {
     next.down = 1
-    next.toGo = Math.min(10, 100 - ballOn)
+    next.toGo = Math.min(10, 100 - next.ballOn)
   } else {
     next.down = d.down + 1
-    next.toGo = line - ballOn
+    next.toGo = line - next.ballOn
   }
   // incompletions and plays out of bounds stop the clock; tackles in bounds keep it running
   next.clockRunning = result.kind === 'tackle' || result.kind === 'sack'
@@ -178,8 +190,15 @@ export function shareText(d, { mode, day, streak, url }) {
     `${d.offense} ${d.scoreOff}–${d.scoreDef} ${d.defense} ` +
     (won ? `✅ with ${fmtClock(d.clock)} left` : `❌ ${d.reason?.replace(/\.$/, '') ?? 'lost'}`)
   const grid = d.plays.map((p) => p.emoji).join('')
+  const lo = Math.min(d.wp0 ?? 1, ...d.plays.map((p) => p.wp ?? 1))
+  const wpLine = `📈 Win prob ${Math.round((d.wp0 ?? 0) * 100)}%${lo < (d.wp0 ?? 0) - 0.05 ? ` (low ${Math.round(lo * 100)}%)` : ''} → ${won ? 100 : 0}%`
+  let history = ''
+  if (d.moment) {
+    const realWon = d.moment.won === 1
+    history = `\n📅 Real ${d.moment.season}: ${realWon ? 'they won' : 'they lost'} · ${won && !realWon ? 'I beat history 🔥' : won ? 'matched history' : realWon ? 'history wins this one' : 'same as history'}`
+  }
   const extra = mode === 'survivor' && streak ? `\nSurvivor streak: ${streak} 🔥` : ''
-  return `${title} 🏈\n${line}\n${grid}${extra}\n${url}`
+  return `${title} 🏈\n${line}\n${grid}\n${wpLine}${history}${extra}\n${url}`
 }
 
 // ------------------------------------------------------------------ defense + coach

@@ -8,3 +8,4 @@ blender/preview
 .DS_Store
 .claude
 .env*
+.data-cache

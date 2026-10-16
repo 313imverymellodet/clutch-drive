@@ -1,7 +1,8 @@
 import { Suspense, lazy, useMemo } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { NFL_TEAMS, TEAM_BY_ABBR } from '../data/nflTeams'
-import { dayNumber, fmtBallOn, fmtClock, makeScenario, todayKey } from '../game/drive'
+import { dayNumber, fmtBallOn, fmtClock, todayKey } from '../game/drive'
+import { DATA_CREDIT, momentForDay, momentLabel, scenarioFromMoment } from '../game/moments'
 import { load } from '../game/storage'
 import { Link } from '../router'
 import { BRAND } from '../brand'
@@ -12,7 +13,7 @@ const HeroScene = lazy(() => import('../scenes/HeroScene'))
 export default function Landing() {
   const key = todayKey()
   const day = dayNumber(key)
-  const sc = useMemo(() => makeScenario(`daily-${key}`), [key])
+  const sc = useMemo(() => scenarioFromMoment(momentForDay(key), `daily-${key}`), [key])
   const off = TEAM_BY_ABBR[sc.offense]
   const def = TEAM_BY_ABBR[sc.defense]
   const played = load(`cd.daily.${key}`, null)
@@ -53,7 +54,7 @@ export default function Landing() {
           <div className="matchup-chip">
             <span className="mc-team" style={{ background: off.endzone, color: off.text }}>{off.abbr}</span>
             <span className="mc-mid">
-              <b>{fmtClock(sc.clock)}</b> left · down {sc.scoreDef - sc.scoreOff} · ball on {fmtBallOn(sc.ballOn)}
+              <b>{fmtClock(sc.clock)}</b> left · down {sc.scoreDef - sc.scoreOff} · ball on {fmtBallOn(sc.ballOn)} · real win prob {Math.round(sc.moment.wp * 100)}%
             </span>
             <span className="mc-team" style={{ background: def.endzone, color: def.text }}>{def.abbr}</span>
           </div>
@@ -63,7 +64,7 @@ export default function Landing() {
             </Link>
             <Link to="/h2h" className="btn big">⚔️ Duel a friend</Link>
           </div>
-          <p className="hero-fine">Free · no download · about 60 seconds a game</p>
+          <p className="hero-fine">📅 Today is a real moment: {momentLabel(sc.moment)}. Can you beat what really happened?</p>
         </div>
       </header>
 
@@ -73,7 +74,7 @@ export default function Landing() {
           <article>
             <span className="num">1</span>
             <h3>Read the situation</h3>
-            <p>Real NFL matchups, a late-game deficit and a ticking clock. Only a touchdown wins it.</p>
+            <p>Every Daily is a real NFL moment: the actual score, clock, field position and timeouts. Only a touchdown wins it, and a live win-probability meter shows every swing.</p>
           </article>
           <article>
             <span className="num">2</span>
@@ -141,6 +142,7 @@ export default function Landing() {
 
       <footer className="land-foot">
         <p>{BRAND.disclaimer}</p>
+        <p>{DATA_CREDIT} <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noreferrer">nflverse</a></p>
       </footer>
     </div>
   )

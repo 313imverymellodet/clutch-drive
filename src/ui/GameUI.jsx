@@ -265,3 +265,56 @@ export function Countdown() {
   const p = (n) => String(n).padStart(2, '0')
   return <span className="mono">{p(Math.floor(s / 3600))}:{p(Math.floor((s % 3600) / 60))}:{p(s % 60)}</span>
 }
+
+// ------------------------------------------------------------------ win probability
+/**
+ * Live win-probability meter. `p` is the current probability for the team shown; `last` is the value
+ * before the most recent play, so the swing can be shown as a chip.
+ */
+export function WinProbMeter({ p, last = null, team, label = 'WIN PROB' }) {
+  const pctNow = Math.round(p * 100)
+  const delta = last == null ? 0 : Math.round((p - last) * 100)
+  // use the team color, unless it's too dark (or white) to read on the dark meter: then its accent color
+  const lum = (hex) => {
+    const n = parseInt((hex ?? '#ffd400').slice(1), 16)
+    return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)
+  }
+  const base = team?.endzone ?? '#ffd400'
+  const color = lum(base) < 60 || lum(base) > 240 ? (lum(team?.stripe) >= 60 && lum(team?.stripe) <= 240 ? team.stripe : '#ffd400') : base
+  return (
+    <div className="wpm" role="meter" aria-valuenow={pctNow} aria-valuemin={0} aria-valuemax={100} aria-label={`${label} ${pctNow}%`}>
+      <span className="wpm-label">{label}</span>
+      <span className="wpm-track">
+        <span className="wpm-fill" style={{ width: `${Math.max(2, pctNow)}%`, background: color }} />
+      </span>
+      <span className="wpm-num">{pctNow}%</span>
+      {delta !== 0 && <span className={`wpm-delta ${delta > 0 ? 'up' : 'down'}`} key={`${last}-${p}`}>{delta > 0 ? `+${delta}` : delta}</span>}
+    </div>
+  )
+}
+
+/** Win-probability trail across the drive (start + after each play). */
+export function wpTrail(d) {
+  return [d.wp0 ?? 0.2, ...d.plays.map((p) => p.wp).filter((x) => x != null)]
+}
+
+export function WPChart({ trail, invert = false, width = 260, height = 70 }) {
+  const pts = trail.map((p) => (invert ? 1 - p : p))
+  if (pts.length < 2) return null
+  const x = (i) => 6 + (i / (pts.length - 1)) * (width - 12)
+  const y = (p) => 6 + (1 - p) * (height - 12)
+  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p).toFixed(1)}`).join(' ')
+  const area = `${path} L${x(pts.length - 1)},${height - 6} L${x(0)},${height - 6} Z`
+  return (
+    <svg className="wpchart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Win probability went from ${Math.round(pts[0] * 100)}% to ${Math.round(pts.at(-1) * 100)}%`}>
+      <line x1="6" x2={width - 6} y1={y(0.5)} y2={y(0.5)} className="wpchart-mid" />
+      <path d={area} className="wpchart-area" />
+      <path d={path} className="wpchart-line" />
+      {pts.map((p, i) => (
+        <circle key={i} cx={x(i)} cy={y(p)} r={i === pts.length - 1 ? 3.5 : 2} className="wpchart-dot" />
+      ))}
+      <text x="8" y="14" className="wpchart-txt">{Math.round(pts[0] * 100)}%</text>
+      <text x={width - 8} y="14" textAnchor="end" className="wpchart-txt">{Math.round(pts.at(-1) * 100)}%</text>
+    </svg>
+  )
+}
