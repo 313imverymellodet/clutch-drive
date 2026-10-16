@@ -40,6 +40,16 @@ The Daily walks through the moments in a fixed shuffle (no repeats for about 11 
 
 Data credit (required by the CC BY 4.0 license): real game situations and the win-probability model come from [nflverse](https://github.com/nflverse/nflverse-data) play-by-play data. The credit appears on the landing page footer and the end-of-drive history card.
 
+## Real branding (test builds only)
+
+Preview and local builds show **real player names, jersey numbers and team logos**; production doesn't.
+
+- `scripts/build-players.mjs` (part of `npm run data`) writes `src/data/players.json`. For each real moment it uses the 22 players those teams actually leaned on in that game: the QB who ran that drive, the most-targeted receivers and tight end, the lead back, and the defenders with the most tackles, sacks, hits and pass breakups. Numbers and names come from nflverse weekly rosters. Practice, Defense and Head-to-Head use each team's current lineup from the latest season.
+- Names show up in every play call ("Complete to Plaxico Burress"), the read picker, the intro ("Charlie Batch is under center"), the landing page and the "what really happened" card. Jerseys carry the real numbers. Names are labels only; they never change how a play resolves, so seeds and head-to-head sync are unaffected.
+- Logos load from ESPN's logo CDN (CORS-enabled) and appear in the scorebug, intro, team pickers, landing hero and painted at midfield.
+- The switch is `__REAL__` in `vite.config.js`. It's on for dev and Vercel **preview** builds and off when `VERCEL_ENV=production`. `REAL_BRANDING=1` or `REAL_BRANDING=0` overrides it. When it's off, the lineup data isn't bundled at all and nothing loads from ESPN.
+- Real names and NFL logos generally need NFLPA and NFL licenses for a public game, so keep the switch off in production until that's sorted.
+
 ## Football AI
 
 Both sides are real coordinators (`src/sim/playSim.js`, `src/sim/aiOffense.js`):
@@ -102,6 +112,7 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | `src/sim/aiOffense.js`, `src/sim/counters.json` | Offensive coordinator AI, and the generated play × coverage matrix |
 | `src/pages/Defend.jsx` | Defense mode (hold the lead) |
 | `scripts/build-moments.mjs`, `src/game/moments.js`, `src/game/winprob.js` | nflverse data pipeline, real moments, live win probability |
+| `scripts/build-players.mjs`, `src/game/real.jsx` | Real lineups and logos for test builds |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |

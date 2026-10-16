@@ -139,7 +139,7 @@ function applyResultRaw(d, playId, result) {
 
   if (result.kind === 'interception') {
     next.status = 'lost'
-    next.reason = `Intercepted by #${result.by ?? '?'}.`
+    next.reason = `Intercepted by ${result.byName ?? `#${result.by ?? '?'}`}.`
     next.clockRunning = false
     return next
   }

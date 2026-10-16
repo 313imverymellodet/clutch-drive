@@ -1,12 +1,13 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as THREE from 'three'
+import { logoUrl } from '../game/real'
 
 // Field coordinates (yards): x = sideline to sideline, z = downfield.
 // Goal lines at z = ±50, end zones to ±60. The offense drives toward +z.
 export const FIELD_WIDTH = 53.33
 const PX = 16 // canvas pixels per yard
 
-function drawField(home, away, mid = home) {
+function drawField(home, away, mid = home, logo = null) {
   const w = Math.round(FIELD_WIDTH * PX)
   const h = 120 * PX
   const c = document.createElement('canvas')
@@ -70,10 +71,18 @@ function drawField(home, away, mid = home) {
     g.fillText(word, 0, 0)
     g.restore()
   }
-  // midfield: home abbreviation in a ring
+  // midfield: the team logo (test builds), otherwise the abbreviation in a ring
   g.save()
   g.translate(w / 2, row(0))
   g.scale(1, -1)
+  if (logo) {
+    const r = 6.5 * PX
+    g.shadowColor = 'rgba(0,0,0,0.35)'
+    g.shadowBlur = 0.6 * PX
+    g.drawImage(logo, -r, -r, r * 2, r * 2)
+    g.restore()
+    return c
+  }
   g.beginPath()
   g.arc(0, 0, 5 * PX, 0, Math.PI * 2)
   g.fillStyle = mid.endzone
@@ -88,16 +97,36 @@ function drawField(home, away, mid = home) {
   return c
 }
 
+/** Loads a team logo as a CORS-clean image (null when logos are off or it fails). */
+function useLogoImage(abbr) {
+  const [img, setImg] = useState(null)
+  useEffect(() => {
+    setImg(null)
+    const url = logoUrl(abbr)
+    if (!url) return
+    const im = new Image()
+    im.crossOrigin = 'anonymous'
+    im.onload = () => setImg(im)
+    im.src = url
+    return () => {
+      im.onload = null
+    }
+  }, [abbr])
+  return img
+}
+
 export function Field({ home, away, midfield, los, firstDown }) {
+  const mid = midfield ?? home
+  const logo = useLogoImage(mid.abbr)
   const texture = useMemo(() => {
-    const t = new THREE.CanvasTexture(drawField(home, away, midfield ?? home))
+    const t = new THREE.CanvasTexture(drawField(home, away, mid, logo))
     t.colorSpace = THREE.SRGBColorSpace
     t.anisotropy = 8
     // The broadcast camera looks down +z, which puts world +x on screen-left; mirror so text reads correctly.
     t.wrapS = THREE.RepeatWrapping
     t.repeat.x = -1
     return t
-  }, [home, away, midfield])
+  }, [home, away, mid, logo])
 
   return (
     <group>

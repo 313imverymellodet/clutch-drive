@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber'
 import { NFL_TEAMS, TEAM_BY_ABBR } from '../data/nflTeams'
 import { dayNumber, fmtBallOn, fmtClock, todayKey } from '../game/drive'
 import { DATA_CREDIT, momentForDay, momentLabel, scenarioFromMoment } from '../game/moments'
+import { TeamLogo, rosterFor, useRealData } from '../game/real'
 import { load } from '../game/storage'
 import { Link } from '../router'
 import { BRAND } from '../brand'
@@ -16,6 +17,8 @@ export default function Landing() {
   const sc = useMemo(() => scenarioFromMoment(momentForDay(key), `daily-${key}`), [key])
   const off = TEAM_BY_ABBR[sc.offense]
   const def = TEAM_BY_ABBR[sc.defense]
+  const realData = useRealData()
+  const qb = useMemo(() => rosterFor({ moment: sc.moment, offense: sc.offense, defense: sc.defense })?.off?.qb?.[1], [sc, realData]) // eslint-disable-line react-hooks/exhaustive-deps
   const played = load(`cd.daily.${key}`, null)
   const surv = load('cd.survivor', { best: 0 })
 
@@ -52,11 +55,11 @@ export default function Landing() {
           </h1>
           <p className="hero-tag">{BRAND.tagline}</p>
           <div className="matchup-chip">
-            <span className="mc-team" style={{ background: off.endzone, color: off.text }}>{off.abbr}</span>
+            <span className="mc-team" style={{ background: off.endzone, color: off.text }}><TeamLogo abbr={off.abbr} size={20} />{off.abbr}</span>
             <span className="mc-mid">
               <b>{fmtClock(sc.clock)}</b> left · down {sc.scoreDef - sc.scoreOff} · ball on {fmtBallOn(sc.ballOn)} · real win prob {Math.round(sc.moment.wp * 100)}%
             </span>
-            <span className="mc-team" style={{ background: def.endzone, color: def.text }}>{def.abbr}</span>
+            <span className="mc-team" style={{ background: def.endzone, color: def.text }}><TeamLogo abbr={def.abbr} size={20} />{def.abbr}</span>
           </div>
           <div className="hero-ctas">
             <Link to="/play?mode=daily" className="btn primary big">
@@ -64,7 +67,7 @@ export default function Landing() {
             </Link>
             <Link to="/h2h" className="btn big">⚔️ Duel a friend</Link>
           </div>
-          <p className="hero-fine">📅 Today is a real moment: {momentLabel(sc.moment)}. Can you beat what really happened?</p>
+          <p className="hero-fine">📅 Today is a real moment: {momentLabel(sc.moment)}.{qb && <> You're {qb}.</>} Can you beat what really happened?</p>
         </div>
       </header>
 

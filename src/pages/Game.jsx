@@ -26,6 +26,7 @@ import { Countdown, DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, S
 import { winProb } from '../game/winprob'
 import { DATA_CREDIT, momentForDay, momentForSurvivor, momentLabel, realOutcome, scenarioFromMoment } from '../game/moments'
 import { Playbook } from '../ui/Playbook'
+import { TeamLogo, rosterFor, useRealData } from '../game/real'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
@@ -56,12 +57,25 @@ export default function Game({ mode: rawMode }) {
 
   const offense = TEAM_BY_ABBR[scenario.offense]
   const defense = TEAM_BY_ABBR[scenario.defense]
+  // test builds: the real players (that day's lineups for a real moment, current ones otherwise)
+  const realData = useRealData()
+  const roster = useMemo(() => rosterFor({ moment: scenario.moment, offense: scenario.offense, defense: scenario.defense }), [scenario, realData]) // eslint-disable-line react-hooks/exhaustive-deps
+  const names = useMemo(() => (roster?.off ? Object.fromEntries(Object.entries(roster.off).map(([k, v]) => [k, v[1]])) : null), [roster])
 
   // ---------------------------------------------------------------- drive + sim state
   const [drive, setDrive] = useState(() => newDrive(scenario))
   const [stage, setStage] = useState(dailySaved ? 'over' : 'intro') // intro | call | live | result | over
   const [sim] = useState(() => new PlaySim())
   const [simKey, setSimKey] = useState(0) // bump to re-render after sim.reset
+  // read through a ref so the lineup arriving late never restarts a drive
+  const rosterRef = useRef(roster)
+  rosterRef.current = roster
+  useEffect(() => {
+    if (roster && sim.phase === 'presnap' && !sim.roster) {
+      sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty: sim.difficulty, roster })
+      setSimKey((k) => k + 1)
+    }
+  }, [roster]) // eslint-disable-line react-hooks/exhaustive-deps
   const [status, setStatus] = useState({ phase: 'presnap' })
   const [replaying, setReplaying] = useState(false)
   const [liveClock, setLiveClock] = useState(scenario.clock)
@@ -79,7 +93,7 @@ export default function Game({ mode: rawMode }) {
       sim.timeScale = 1
       // the defense lines up in its next look so you can read it before calling a play
       const cov = defenseFor(d, difficulty)
-      sim.reset({ play: sim.play?.id ?? 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: cov, situation: { clock: d.clock }, difficulty })
+      sim.reset({ play: sim.play?.id ?? 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: cov, situation: { clock: d.clock }, difficulty, roster: rosterRef.current })
       setCoverage(cov)
       setPreview(null)
       setSimKey((k) => k + 1)
@@ -161,7 +175,7 @@ export default function Game({ mode: rawMode }) {
     sim.camMode = 'broadcast'
     sim.timeScale = 1
     unlock()
-    sim.reset({ play: playId, seed, los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, difficulty, reads, flip })
+    sim.reset({ play: playId, seed, los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, difficulty, reads, flip, roster })
     sim.snap()
     setPreview(null)
     applied.current = null
@@ -206,7 +220,7 @@ export default function Game({ mode: rawMode }) {
   }
 
   const replay = () => {
-    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0 })
+    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0, roster: sim.roster })
     sim.camMode = 'close'
     sim.timeScale = 0.45
     sim.snap()
@@ -281,7 +295,7 @@ export default function Game({ mode: rawMode }) {
         <Canvas dpr={[1, 2]} camera={{ fov: 45, position: [0, 14, los - 30], near: 0.1, far: 1000 }}>
           <PlayScene
             sim={sim}
-            version={`${scenario.offense}-${scenario.defense}`}
+            version={`${scenario.offense}-${scenario.defense}-${roster ? 'real' : 'generic'}`}
             offense={offense}
             defense={defense}
             onStatus={onStatus}
@@ -308,7 +322,7 @@ export default function Game({ mode: rawMode }) {
 
       <div className="hud-bottom">
         {stage === 'intro' && (
-          <IntroCard mode={mode} day={day} drive={drive} offense={offense} defense={defense} onGo={takeField} practice={practice} onTeams={practiceAgain} />
+          <IntroCard mode={mode} day={day} drive={drive} offense={offense} defense={defense} onGo={takeField} practice={practice} onTeams={practiceAgain} qb={roster?.off?.qb} />
         )}
 
         {stage === 'call' && (
@@ -328,7 +342,7 @@ export default function Game({ mode: rawMode }) {
             <FieldBar drive={drive} offense={offense} defense={defense} />
             {drive.clockRunning && <div className="hurry">⏱ Clock is running, call it fast!</div>}
             <DefenseRead shown={coverage.shown} keyOn={coverage.key} tip={coachTip(drive, coverage.shown, coverage.key)} />
-            <Playbook onSnap={callPlay} onPreview={setPreview} />
+            <Playbook onSnap={callPlay} onPreview={setPreview} names={names} />
           </div>
         )}
 
@@ -357,24 +371,27 @@ export default function Game({ mode: rawMode }) {
           onNewRun={newSurvivorRun}
           onPractice={() => practiceAgain()}
           onReplay={drive.plays.length && drive.status !== 'playing' ? replay : null}
+          qb={scenario.moment ? roster?.off?.qb?.[1] : null}
         />
       )}
     </main>
   )
 }
 
-function IntroCard({ mode, day, drive, offense, defense, onGo, practice, onTeams }) {
+function IntroCard({ mode, day, drive, offense, defense, onGo, practice, onTeams, qb }) {
   const deficit = drive.scoreDef - drive.scoreOff
   return (
     <div className="intro card">
       <div className="eyebrow">{mode === 'daily' ? `Daily Drive #${day}` : mode === 'survivor' ? `Survivor · Game ${drive.id.split('-').pop() * 1 + 1}` : 'Practice'}</div>
       {drive.moment && <span className="moment-tag">📅 Real moment · {momentLabel(drive.moment)}</span>}
       <h2>
+        <TeamLogo abbr={offense.abbr} size={34} className="team-logo intro-logo" />
         <span style={{ color: offense.endzone === '#FFFFFF' ? offense.stripe : offense.endzone }}>{offense.city} {offense.name}</span> trail by {deficit}
       </h2>
       <p className="lede">
         {fmtClock(drive.clock)} left in the 4th. Your ball on the {fmtBallOn(drive.ballOn)}, {drive.timeouts} timeout{drive.timeouts === 1 ? '' : 's'}.
         Only a touchdown wins it against the {defense.name}.
+        {qb && <> <b>{qb[1]}</b> (#{qb[0]}) is under center.</>}
         {drive.moment && <> In real life their win probability here was <b>{Math.round(drive.moment.wp * 100)}%</b>. Can you do better than what really happened?</>}
       </p>
       <ul className="rules">
@@ -393,7 +410,7 @@ function IntroCard({ mode, day, drive, offense, defense, onGo, practice, onTeams
   )
 }
 
-function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun, onPractice, onReplay }) {
+function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun, onPractice, onReplay, qb }) {
   const won = drive ? drive.status === 'won' : saved?.status === 'won'
   const text = drive ? shareText(drive, { mode, day, streak: survivor.streak, url: SITE }) : saved?.text
   // stats are saved by the parent right after this mounts, so re-read them a beat later
@@ -409,14 +426,14 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
         <h2>{won ? 'You won it!' : 'So close.'}</h2>
         {drive ? (
           <p className="lede">
-            {drive.offense} {drive.scoreOff} – {drive.scoreDef} {drive.defense}. {drive.reason}
+            <TeamLogo abbr={drive.offense} size={20} /> {drive.offense} {drive.scoreOff} – {drive.scoreDef} {drive.defense} <TeamLogo abbr={drive.defense} size={20} />. {drive.reason}
           </p>
         ) : (
           <p className="lede">You already played today's drive.</p>
         )}
         <div className="grid-emoji">{drive ? drive.plays.map((p) => p.emoji).join('') : saved?.plays}</div>
         {drive && <WPChart trail={[...wpTrail(drive), won ? 1 : 0]} />}
-        {drive?.moment && <History m={drive.moment} won={won} />}
+        {drive?.moment && <History m={drive.moment} won={won} qb={qb} />}
 
         {mode === 'daily' && (
           <div className="stats">
@@ -450,13 +467,13 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
   )
 }
 
-function History({ m, won }) {
+function History({ m, won, qb }) {
   const realWon = m.won === 1
   const verdict = won && !realWon ? '🔥 You beat history!' : won ? '✅ You matched history.' : realWon ? '📜 History wins this one.' : '🤝 Same as history.'
   return (
     <div className="history">
       <b>What really happened · {momentLabel(m)}</b>
-      {realOutcome(m)} Their win probability was {Math.round(m.wp * 100)}% on this drive. <b style={{ display: 'inline', fontSize: 12 }}>{verdict}</b>
+      {realOutcome(m, qb)} Their win probability was {Math.round(m.wp * 100)}% on this drive. <b style={{ display: 'inline', fontSize: 12 }}>{verdict}</b>
       <p className="credit">{DATA_CREDIT} <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noreferrer">nflverse</a></p>
     </div>
   )

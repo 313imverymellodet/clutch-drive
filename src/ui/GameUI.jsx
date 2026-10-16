@@ -4,6 +4,7 @@ import { COVERAGES, PLAYS } from '../sim/playSim'
 import { FAMILIES } from '../sim/playbook'
 import { isMuted, onMuteChange, setMuted, sfx, unlock } from '../game/sound'
 import { downAndDistance, fmtBallOn, fmtClock, QUARTER_LABEL } from '../game/drive'
+import { TeamLogo } from '../game/real'
 
 // ------------------------------------------------------------------ scorebug
 export function Scorebug({ drive, offense, defense, clock, running }) {
@@ -12,6 +13,7 @@ export function Scorebug({ drive, offense, defense, clock, running }) {
     <div className="bug" role="status" aria-label="Scoreboard">
       <div className="bug-row">
         <span className="bug-team" style={{ background: offense.endzone, color: offense.text }}>
+          <TeamLogo abbr={offense.abbr} size={18} className="bug-logo" />
           {offense.abbr}
           <span className="bug-poss" aria-label="Your ball">●</span>
         </span>
@@ -20,7 +22,10 @@ export function Scorebug({ drive, offense, defense, clock, running }) {
           <small>{QUARTER_LABEL}</small> {fmtClock(clock)}
         </span>
         <span className="bug-score">{drive.scoreDef}</span>
-        <span className="bug-team" style={{ background: defense.endzone, color: defense.text }}>{defense.abbr}</span>
+        <span className="bug-team" style={{ background: defense.endzone, color: defense.text }}>
+          <TeamLogo abbr={defense.abbr} size={18} className="bug-logo" />
+          {defense.abbr}
+        </span>
       </div>
       <div className="bug-sub">
         <span>{downAndDistance(drive)} · {fmtBallOn(drive.ballOn)}</span>

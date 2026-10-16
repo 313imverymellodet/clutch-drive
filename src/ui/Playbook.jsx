@@ -4,6 +4,7 @@ import { COVERAGES, COVERAGE_IDS } from '../sim/playSim'
 import { bestMatchup } from '../sim/aiOffense'
 import { load, save } from '../game/storage'
 import { sfx } from '../game/sound'
+import { shortName } from '../game/real'
 
 const READ_COLORS = ['#ffd400', '#ffffff', '#8fd3ff']
 const CURATED = { out: 'Stops clock', blast: 'Power!', run: 'Clock runs', outside: 'Get the edge', draw: 'Vs. soft zones' }
@@ -85,7 +86,7 @@ export function PlayDiagram({ id, reads, flip = false, className = 'route-icon' 
  * Mouse: hover previews on the field; click selects, click again (or SNAP) runs it.
  * Touch: tap selects + previews, tap again (or SNAP) runs it. Keys: 1-6 select, Enter snaps, F flips.
  */
-export function Playbook({ onSnap, onPreview, disabled, compactHint }) {
+export function Playbook({ onSnap, onPreview, disabled, compactHint, names = null }) {
   const [fam, setFam] = useState(() => load('cd.pb.fam', 'quick'))
   const [sel, setSel] = useState(null)
   const [flip, setFlip] = useState(false)
@@ -173,7 +174,7 @@ export function Playbook({ onSnap, onPreview, disabled, compactHint }) {
                   <span>{label}</span>
                   <select value={reads[slot] ?? ''} onChange={(e) => setSlot(slot, e.target.value)}>
                     {eligible.map((k) => (
-                      <option key={k} value={k}>{POS_LABEL[k]} · {routeName(k, PLAYBOOK[sel].routes[k])}</option>
+                      <option key={k} value={k}>{names?.[k] ? shortName(names[k]) : POS_LABEL[k]} · {routeName(k, PLAYBOOK[sel].routes[k])}</option>
                     ))}
                   </select>
                 </label>

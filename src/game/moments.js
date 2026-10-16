@@ -51,13 +51,13 @@ const OUTCOME = {
   'Missed field goal': 'missed a field goal',
 }
 
-/** "The real Seahawks turned it over on downs and lost 17-13." */
-export function realOutcome(m) {
+/** "The real Seahawks turned it over on downs and lost 17-13." (qb: "..., with Russell Wilson at QB, ...") */
+export function realOutcome(m, qb = null) {
   const t = TEAM_BY_ABBR[m.off]
   const how = OUTCOME[m.result] ?? 'came up short'
   const [f, a] = m.final
   const res = m.won === 1 ? `won ${f}–${a}` : m.won === 0.5 ? `tied ${f}–${a}` : `lost ${a}–${f}`
-  return `The real ${t?.name ?? m.off} ${how} and ${res}.`
+  return `The real ${t?.name ?? m.off}${qb ? `, with ${qb} at QB,` : ''} ${how} and ${res}.`
 }
 
 /** A real moment as a drive scenario (plus the history to compare against). */

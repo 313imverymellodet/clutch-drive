@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import PlayScene from '../scenes/PlayScene'
 import { COVERAGES, PLAYS, PlaySim } from '../sim/playSim'
@@ -25,6 +25,7 @@ import { winProb } from '../game/winprob'
 import { TeamSelect } from '../ui/TeamSelect'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
+import { rosterFor, useRealData } from '../game/real'
 
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 // ------------------------------------------------------------------ connection / lobby
@@ -287,6 +288,9 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
   const d = m.drives[m.half]
   const offense = TEAM_BY_ABBR[d.offense]
   const defense = TEAM_BY_ABBR[d.defense]
+  // test builds: both teams' current real players (labels only, so both browsers still run the same play)
+  const realData = useRealData()
+  const roster = useMemo(() => rosterFor({ offense: d.offense, defense: d.defense }), [d.offense, d.defense, realData])
   const iAmOffense = offenseRole(m) === role
   const myTurn = isMyTurn(m, role)
   const left = useCountdown(clockEnds)
@@ -308,16 +312,16 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
     const shown = m.phase === 'def-call' && !iAmOffense ? draft.shown ?? draft.call : m.defCall?.shown ?? 'cover3'
     sim.camMode = 'broadcast'
     sim.timeScale = 1
-    sim.reset({ play: 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: { call: shown, shown } })
+    sim.reset({ play: 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: { call: shown, shown }, roster })
     setSimKey((k) => k + 1)
-  }, [m.phase, m.half, m.n, d.ballOn, d.toGo, m.defCall?.shown, draft.call, draft.shown, iAmOffense, sim]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [m.phase, m.half, m.n, d.ballOn, d.toGo, m.defCall?.shown, draft.call, draft.shown, iAmOffense, sim, roster]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // snap: both browsers run the identical seeded play
   useEffect(() => {
     if (m.phase !== 'live' || !m.snap || lastSnap.current === m.snap.id) return
     lastSnap.current = m.snap.id
     const sn = m.snap
-    sim.reset({ play: sn.play, seed: sn.seed, los: sn.los, toGo: sn.toGo, coverage: sn.coverage, situation: { clock: sn.clock }, reads: sn.reads, flip: sn.flip })
+    sim.reset({ play: sn.play, seed: sn.seed, los: sn.los, toGo: sn.toGo, coverage: sn.coverage, situation: { clock: sn.clock }, reads: sn.reads, flip: sn.flip, roster })
     sim.snap()
     setPreview(null)
     setSimKey((k) => k + 1)
@@ -364,7 +368,7 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
         <Canvas dpr={[1, 2]} camera={{ fov: 45, position: [0, 14, d.ballOn - 80], near: 0.1, far: 1000 }}>
           <PlayScene
             sim={sim}
-            version={`${d.offense}-${d.defense}`}
+            version={`${d.offense}-${d.defense}-${roster ? 'real' : 'generic'}`}
             offense={offense}
             defense={defense}
             onStatus={onStatus}
@@ -432,7 +436,7 @@ function Duel({ view: m, role, act, clockEnds, net, hostResult, onRematch }) {
             <FieldBar drive={d} offense={offense} defense={defense} />
             {d.clockRunning && <div className="hurry">⏱ Clock is running: −15s when you snap it (timeout stops it)</div>}
             <DefenseRead shown={shownNow} tip={`${coachTip(d, shownNow)} (Could be a disguise.)`} />
-            <Playbook onSnap={callPlay} onPreview={setPreview} />
+            <Playbook onSnap={callPlay} onPreview={setPreview} names={roster?.off ? Object.fromEntries(Object.entries(roster.off).map(([k, v]) => [k, v[1]])) : null} />
           </div>
         )}
         {m.phase === 'off-call' && !iAmOffense && m.defCall && (

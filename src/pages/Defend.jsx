@@ -14,6 +14,7 @@ import { DefensePicker } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
+import { rosterFor, useRealData } from '../game/real'
 
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 const AI_HUDDLE = 12 // seconds a running clock burns while their offense lines up
@@ -68,6 +69,11 @@ export default function Defend({ daily: isDaily }) {
   const [stage, setStage] = useState('intro') // intro | call | live | result | over
   const [sim] = useState(() => new PlaySim())
   const [simKey, setSimKey] = useState(0)
+  // test builds: both teams' current real players (read through a ref so a late load never restarts the drive)
+  const realData = useRealData()
+  const roster = useMemo(() => rosterFor({ offense: scenario.offense, defense: scenario.defense }), [scenario, realData]) // eslint-disable-line react-hooks/exhaustive-deps
+  const rosterRef = useRef(roster)
+  rosterRef.current = roster
   const [status, setStatus] = useState({ phase: 'presnap' })
   const [draft, setDraft] = useState({ call: 'cover3', shown: null, key: null })
   const [replaying, setReplaying] = useState(false)
@@ -80,7 +86,7 @@ export default function Defend({ daily: isDaily }) {
     (d, look) => {
       sim.camMode = 'broadcast'
       sim.timeScale = 1
-      sim.reset({ play: 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: { call: look, shown: look } })
+      sim.reset({ play: 'dig', seed: 1, los: d.ballOn - 50, toGo: d.toGo, coverage: { call: look, shown: look }, roster: rosterRef.current })
       setSimKey((k) => k + 1)
     },
     [sim],
@@ -137,7 +143,7 @@ export default function Defend({ daily: isDaily }) {
     const coverage = { call: draft.call, shown, key: draft.key ? { family: draft.key, s: 0.8, guess: true } : null }
     sim.camMode = 'broadcast'
     sim.timeScale = 1
-    sim.reset({ play: call.play, seed: hashString(`${scenario.id}|${n}|${draft.call}|${shown}|${draft.key}`), los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, flip: call.flip })
+    sim.reset({ play: call.play, seed: hashString(`${scenario.id}|${n}|${draft.call}|${shown}|${draft.key}`), los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, flip: call.flip, roster })
     sim.snap()
     applied.current = null
     setSimKey((k) => k + 1)
@@ -168,7 +174,7 @@ export default function Defend({ daily: isDaily }) {
   }
 
   const replay = () => {
-    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0 })
+    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0, roster: sim.roster })
     sim.camMode = 'close'
     sim.timeScale = 0.45
     sim.snap()
@@ -219,7 +225,7 @@ export default function Defend({ daily: isDaily }) {
         <Canvas dpr={[1, 2]} camera={{ fov: 45, position: [0, 14, drive.ballOn - 80], near: 0.1, far: 1000 }}>
           <PlayScene
             sim={sim}
-            version={`${scenario.offense}-${scenario.defense}`}
+            version={`${scenario.offense}-${scenario.defense}-${roster ? 'real' : 'generic'}`}
             offense={them}
             defense={you}
             onStatus={onStatus}

@@ -146,6 +146,9 @@ function angleLerp(a, b, k) {
   return a + d * k
 }
 
+/** How play-by-play names a player: the real name when there's a roster, else the jersey number. */
+const who = (p) => p.name ?? `#${p.number}`
+
 const isDefBack = (p) => p.role === 'CB' || p.role === 'S' || p.role === 'LB'
 
 export class PlaySim {
@@ -159,8 +162,11 @@ export class PlaySim {
    * play: playbook id. reads: receiver keys in progression order (defaults to the play's).
    * flip: mirror the formation and play to the other side. coverage: { call, shown, key }.
    * situation: { clock } for clock-aware AI.
+   * roster: optional real lineup { off: { qb: [number, name], ... }, def: { DL0: [...], ... } } (labels only:
+   * it changes jersey numbers and names, never the play, so seeds replay the same).
    */
-  reset({ play = 'dig', seed = 1, los = LOS, toGo = 10, coverage = null, situation = {}, difficulty = 0, reads = null, flip = false } = {}) {
+  reset({ play = 'dig', seed = 1, los = LOS, toGo = 10, coverage = null, situation = {}, difficulty = 0, reads = null, flip = false, roster = null } = {}) {
+    this.roster = roster
     this.los = los
     this.firstDown = Math.min(los + toGo, GOAL_LINE)
     this.play = PLAYS[play] ?? PLAYS.dig
@@ -195,8 +201,21 @@ export class PlaySim {
     const pb = this.play
     const isRun = this.play.type === 'run'
     const route = (pts) => pts.map(([x, z]) => V(x, Math.min(END_LINE, this.los + z)))
-    const off = (role, x, dz, extra = {}) => this.add('off', role, x, this.los + dz, 0, extra)
-    const def = (role, x, dz, extra = {}) => this.add('def', role, x, this.los + dz, Math.PI, extra)
+    // a real lineup swaps in jersey numbers and names by slot
+    const label = (side, slot, extra) => {
+      const real = roster?.[side]?.[slot]
+      return real ? { ...extra, number: real[0], name: real[1] } : extra
+    }
+    let olSlot = 0
+    const off = (role, x, dz, extra = {}) => {
+      const slot = extra.key ?? (role === 'C' ? 'C' : role === 'OL' ? `OL${++olSlot}` : null)
+      return this.add('off', role, x, this.los + dz, 0, label('off', slot, extra))
+    }
+    const defSlot = { DL: 0 }
+    const def = (role, x, dz, extra = {}) => {
+      const slot = extra.slot ?? (role === 'DL' ? `DL${defSlot.DL++}` : null)
+      return this.add('def', role, x, this.los + dz, Math.PI, label('def', slot, extra))
+    }
 
     // ------------------------------------------------ offense
     this.center = off('C', 0, -0.9, { number: 55, anim: 'Block' })
@@ -254,13 +273,13 @@ export class PlaySim {
     ;[[-0.9, 1.1], [0.9, 1.1], [-3.8, 1.1], [3.8, 1.1]].forEach(([x, dz], i) => {
       D[`DL${i}`] = def('DL', x, dz, { number: dlNumbers[i], anim: 'Stance', speed: r(5.6, 6.4), shed: (isRun ? r(2.1, 3.3) : r(1.1, 3.2)) - difficulty * 0.12 })
     })
-    D.MLB = def('LB', ...align.MLB, { number: 54, anim: 'Idle', speed: r(6.9, 7.6) })
-    D.SLB = def('LB', ...align.SLB, { number: 50, anim: 'Idle', speed: r(6.8, 7.5) })
-    D.WLB = def('LB', ...align.WLB, { number: 52, anim: 'Idle', speed: r(6.8, 7.5) })
-    D.CBX = def('CB', ...align.CBX, { number: 24, anim: 'Idle', speed: r(7.8, 8.6) })
-    D.CBZ = def('CB', ...align.CBZ, { number: 21, anim: 'Idle', speed: r(7.8, 8.6) })
-    D.SS = def('S', ...align.SS, { number: 31, anim: 'Idle', speed: r(7.5, 8.3) })
-    D.FS = def('S', ...align.FS, { number: 29, anim: 'Idle', speed: r(7.7, 8.5) })
+    D.MLB = def('LB', ...align.MLB, { slot: 'MLB', number: 54, anim: 'Idle', speed: r(6.9, 7.6) })
+    D.SLB = def('LB', ...align.SLB, { slot: 'SLB', number: 50, anim: 'Idle', speed: r(6.8, 7.5) })
+    D.WLB = def('LB', ...align.WLB, { slot: 'WLB', number: 52, anim: 'Idle', speed: r(6.8, 7.5) })
+    D.CBX = def('CB', ...align.CBX, { slot: 'CBX', number: 24, anim: 'Idle', speed: r(7.8, 8.6) })
+    D.CBZ = def('CB', ...align.CBZ, { slot: 'CBZ', number: 21, anim: 'Idle', speed: r(7.8, 8.6) })
+    D.SS = def('S', ...align.SS, { slot: 'SS', number: 31, anim: 'Idle', speed: r(7.5, 8.3) })
+    D.FS = def('S', ...align.FS, { slot: 'FS', number: 29, anim: 'Idle', speed: r(7.7, 8.5) })
     for (const p of Object.values(D)) {
       p.react = r(0.12, 0.42) - difficulty * 0.03
       if (isRun && p.role !== 'DL') p.react += pb.run.draw ? 0 : r(0.25, 0.9) // the play fake freezes the second level
@@ -1181,7 +1200,7 @@ export class PlaySim {
     qb.pendingFall = t + 0.18
     const gain = Math.round(qb.pos.z - this.los)
     this.result = { good: false, kind: 'sack', gain, first: false, spot: qb.pos.z, elapsed: t }
-    this.message = `SACKED by #${d.number} for ${gain} yards`
+    this.message = `SACKED by ${who(d)} for ${gain} yards`
     this.emit('sack', { by: d.number })
   }
 
@@ -1234,7 +1253,7 @@ export class PlaySim {
     const overthrow = 0.06 + (this.hurried ? 0.16 : 0) + (deep ? 0.07 : 0)
     if (this.rng() < overthrow) {
       b.vel.copy(b.dir).multiplyScalar(9).setY(1)
-      return incomplete(this.hurried ? `Incomplete! Rushed throw sails past #${r.number}` : `Incomplete! Overthrown, just past #${r.number}`)
+      return incomplete(this.hurried ? `Incomplete! Rushed throw sails past ${who(r)}` : `Incomplete! Overthrown, just past ${who(r)}`)
     }
     const keyed = this.key && this.key.family === this.play.family ? this.key.s : 0
     const mid = !deep && this.aim.point.z - this.los > 8
@@ -1249,18 +1268,18 @@ export class PlaySim {
       this.oneShot(cover, 'Catch')
       this.phase = 'dead'
       this.deadTime = t
-      this.result = { good: false, kind: 'interception', gain: 0, first: false, spot: this.los, elapsed: t, by: cover.number }
-      this.message = `INTERCEPTED by #${cover.number}!`
+      this.result = { good: false, kind: 'interception', gain: 0, first: false, spot: this.los, elapsed: t, by: cover.number, byName: cover.name ?? null }
+      this.message = `INTERCEPTED by ${who(cover)}!`
       this.emit('interception', { by: cover.number })
       return
     }
     if (roll < pInt + pBreak) {
       b.vel.set((this.rng() - 0.5) * 6, 4, -3)
-      return incomplete(`Incomplete! Broken up by #${cover.number}`)
+      return incomplete(`Incomplete! Broken up by ${who(cover)}`)
     }
     if (this.rng() < 0.07) {
       b.vel.set((this.rng() - 0.5) * 3, 3, 1.5)
-      return incomplete(`Dropped! #${r.number} can't hang on`)
+      return incomplete(`Dropped! ${who(r)} can't hang on`)
     }
     b.state = 'held'
     b.holder = r
@@ -1330,12 +1349,12 @@ export class PlaySim {
     const gain = Math.min(Math.round(spot - this.los), first || kind === 'touchdown' ? Infinity : Math.max(0, Math.round(this.firstDown - this.los) - 1))
     this.result = { good: kind === 'touchdown' || first || gain >= 4, kind, gain, first, spot, elapsed: t, how: this.how }
     const how = {
-      catch: `Complete to #${c.number}`,
-      run: `#${c.number} runs`,
-      blast: '#8 QB BLAST',
-      keep: '#8 keeps it',
-      scramble: '#8 scrambles',
-    }[this.how] ?? `#${c.number} runs`
+      catch: `Complete to ${who(c)}`,
+      run: `${who(c)} runs`,
+      blast: `${who(this.qb)} QB BLAST`,
+      keep: `${who(this.qb)} keeps it`,
+      scramble: `${who(this.qb)} scrambles`,
+    }[this.how] ?? `${who(c)} runs`
     const yards = `${gain} yard${Math.abs(gain) === 1 ? '' : 's'}`
     if (kind === 'touchdown') this.message = `TOUCHDOWN! ${how} ${yards}`
     else this.message = `${how} for ${yards}${kind === 'out' ? ', out of bounds' : ''}${first ? ' — FIRST DOWN!' : ''}`
