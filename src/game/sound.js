@@ -256,6 +256,15 @@ export function playEvent(e) {
       return setTimeout(() => sfx.whistle(0.28), 200)
     case 'out':
       return sfx.whistle()
+    case 'pump':
+      return sfx.click()
+    case 'move':
+      return sfx.cheer(0.4)
+    case 'slide':
+      return setTimeout(() => sfx.whistle(), 200)
+    case 'spike':
+      sfx.hit()
+      return setTimeout(() => sfx.whistle(0.3), 250)
     case 'touchdown':
       sfx.whistle(0.5)
       return sfx.cheer(2)

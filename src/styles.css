@@ -514,3 +514,24 @@ a { color: inherit; }
 .intro-logo { vertical-align: -6px; margin-right: 8px; }
 .mc-team .team-logo { vertical-align: -5px; margin-right: 5px; }
 @media (max-width: 600px) { .bug-logo { width: 15px; height: 15px; margin-right: 3px; } }
+
+/* v7: live QB controls */
+.clock-btns { display: inline-flex; gap: 6px; }
+.live-controls { position: relative; z-index: 3; margin: 0 auto 8px; max-width: 560px; background: rgba(22, 24, 29, 0.86); color: #fff; border-radius: 16px; padding: 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.3); pointer-events: auto; animation: lc-in 0.18s ease-out; }
+@keyframes lc-in { from { transform: translateY(10px); opacity: 0; } }
+.lc-hint { font-size: 12px; font-weight: 800; letter-spacing: 0.02em; opacity: 0.85; text-align: center; margin-bottom: 8px; }
+.lc-reads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 6px; }
+.lc-read { display: flex; align-items: center; gap: 6px; border: 3px solid var(--tone); background: #fff; color: var(--ink); border-radius: 12px; padding: 9px 8px; font-weight: 900; font-size: 14px; min-width: 0; touch-action: manipulation; transition: transform 0.08s; }
+.lc-read:active, .lc-read.on { transform: scale(0.96); background: var(--tone); }
+.lc-n { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: #fff; font-size: 12px; display: grid; place-items: center; }
+.lc-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.lc-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 0 2px rgba(0,0,0,0.15); }
+.lc-row { display: flex; gap: 6px; }
+.lc-row + .lc-row { margin-top: 6px; }
+.lc-btn { flex: 1; border: 2px solid rgba(255,255,255,0.35); background: rgba(255,255,255,0.1); color: #fff; border-radius: 10px; padding: 9px 6px; font-weight: 800; font-size: 13px; touch-action: manipulation; }
+.lc-btn.big { padding: 13px 6px; font-size: 15px; background: #ffd400; color: var(--ink); border-color: #ffd400; }
+.lc-btn.on { background: #2f6cff; border-color: #2f6cff; }
+.lc-btn:disabled { opacity: 0.4; }
+.lc-btn kbd { font: inherit; font-size: 10px; opacity: 0.6; margin-left: 3px; }
+@media (max-width: 600px) { .lc-btn kbd { display: none; } .lc-read { font-size: 13px; padding: 9px 6px; } }
+.live-controls + .skip { bottom: calc(100% + 6px); }
