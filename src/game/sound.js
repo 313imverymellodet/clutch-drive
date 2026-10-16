@@ -37,6 +37,7 @@ export function unlock() {
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate)
       const d = noiseBuf.getChannelData(0)
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1
+      loadClips()
     }
     if (ctx.state === 'suspended') ctx.resume()
   } catch {
@@ -45,6 +46,33 @@ export function unlock() {
 }
 
 const ready = () => !!ctx && ctx.state === 'running'
+
+// Recorded clips generated with Viewmax (scripts/make-sounds.mjs). Each falls back to the synth if it can't load.
+const CLIPS = ['crowd', 'roar', 'groan', 'cheer', 'hit', 'cadence', 'theme']
+const buffers = {}
+function loadClips() {
+  for (const name of CLIPS) {
+    fetch(`/sounds/${name}.m4a`)
+      .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status)))
+      .then((b) => ctx.decodeAudioData(b))
+      .then((buf) => {
+        buffers[name] = buf
+        if (name === 'crowd' && ambience?.synth) restartAmbience()
+      })
+      .catch(() => {})
+  }
+}
+function clip(name, gain = 1, { rate = 1 } = {}) {
+  if (!ready() || !buffers[name]) return false
+  const src = ctx.createBufferSource()
+  src.buffer = buffers[name]
+  src.playbackRate.value = rate
+  const g = ctx.createGain()
+  g.gain.value = gain
+  src.connect(g).connect(master)
+  src.start()
+  return true
+}
 
 function noise(dur, { type = 'bandpass', freq = 1000, q = 1, gain = 0.3, attack = 0.01, release = dur, sweepTo = null } = {}) {
   const t = ctx.currentTime
@@ -123,21 +151,32 @@ export const sfx = {
   },
   hit(big = false) {
     if (!ready()) return
+    if (clip('hit', big ? 0.9 : 0.6, { rate: big ? 0.9 : 1 + Math.random() * 0.1 })) return
     tone(big ? 95 : 120, 0.18, { gain: big ? 0.35 : 0.22, to: 45 })
     noise(0.14, { type: 'lowpass', freq: 380, gain: big ? 0.4 : 0.25 })
   },
   cheer(level = 1) {
     if (!ready()) return
+    if (level >= 2 ? clip('roar', 0.8) : clip('cheer', 0.35 + level * 0.25)) return
     noise(1.6 + level, { freq: 900, q: 0.6, gain: 0.05 + level * 0.06, attack: 0.25, release: 1.4 + level })
     noise(1.4 + level, { type: 'highpass', freq: 2500, gain: 0.015 + level * 0.02, attack: 0.3, release: 1.2 + level })
   },
   groan() {
     if (!ready()) return
+    if (clip('groan', 0.6)) return
     noise(1.4, { type: 'lowpass', freq: 1300, sweepTo: 350, gain: 0.12, attack: 0.15, release: 1.3 })
   },
   tick() {
     if (!ready()) return
     tone(1500, 0.03, { type: 'square', gain: 0.03 })
+  },
+  /** "Blue 42, set, HUT!" when you take the field. */
+  cadence() {
+    clip('cadence', 0.7)
+  },
+  /** Victory music on a win. */
+  theme() {
+    clip('theme', 0.35)
   },
   click() {
     if (!ready()) return
@@ -148,6 +187,18 @@ export const sfx = {
 /** Low stadium murmur while a game is on screen. */
 export function startAmbience() {
   if (!ready() || ambience) return
+  if (buffers.crowd) {
+    const src = ctx.createBufferSource()
+    src.buffer = buffers.crowd
+    src.loop = true
+    const g = ctx.createGain()
+    g.gain.value = 0
+    g.gain.setTargetAtTime(0.18, ctx.currentTime, 1)
+    src.connect(g).connect(master)
+    src.start(0, Math.random() * buffers.crowd.duration)
+    ambience = { src, g }
+    return
+  }
   const src = ctx.createBufferSource()
   src.buffer = noiseBuf
   src.loop = true
@@ -160,7 +211,13 @@ export function startAmbience() {
   g.gain.setTargetAtTime(0.025, ctx.currentTime, 1)
   src.connect(f).connect(g).connect(master)
   src.start()
-  ambience = { src, g }
+  ambience = { src, g, synth: true }
+}
+
+/** Swap the synth murmur for the recorded crowd once it has loaded. */
+function restartAmbience() {
+  stopAmbience()
+  startAmbience()
 }
 
 export function stopAmbience() {
@@ -199,6 +256,15 @@ export function playEvent(e) {
       return setTimeout(() => sfx.whistle(0.28), 200)
     case 'out':
       return sfx.whistle()
+    case 'pump':
+      return sfx.click()
+    case 'move':
+      return sfx.cheer(0.4)
+    case 'slide':
+      return setTimeout(() => sfx.whistle(), 200)
+    case 'spike':
+      sfx.hit()
+      return setTimeout(() => sfx.whistle(0.3), 250)
     case 'touchdown':
       sfx.whistle(0.5)
       return sfx.cheer(2)

@@ -26,11 +26,13 @@ import { Countdown, DefenseRead, DriveStrip, FieldBar, ResultBanner, Scorebug, S
 import { winProb } from '../game/winprob'
 import { DATA_CREDIT, momentForDay, momentForSurvivor, momentLabel, realOutcome, scenarioFromMoment } from '../game/moments'
 import { Playbook } from '../ui/Playbook'
+import { LiveControls } from '../ui/LiveControls'
 import { TeamLogo, rosterFor, useRealData } from '../game/real'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
 
+const SPIKE_RUNOFF = 3 // seconds to hustle to the line and clock it
 const MODES = { daily: 'Daily Drive', survivor: 'Survivor', practice: 'Practice' }
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 
@@ -146,6 +148,7 @@ export default function Game({ mode: rawMode }) {
     unlock()
     startAmbience()
     sfx.whistle(0.25)
+    sfx.cadence()
     huddleFrom.current = drive.clock
     setStage('call')
   }
@@ -162,7 +165,8 @@ export default function Game({ mode: rawMode }) {
     // getting lined up takes time when the clock is running
     if (d.clockRunning) {
       const spent = (huddleFrom.current ?? d.clock) - d.clock
-      d = tickClock(d, Math.max(0, HUDDLE_RUNOFF - spent))
+      // everyone sprints to the line for a spike; a real play needs the full huddle
+      d = tickClock(d, Math.max(0, (playId === 'spike' ? SPIKE_RUNOFF : HUDDLE_RUNOFF) - spent))
       if (d.status !== 'playing') {
         setDrive(d)
         setStage('over')
@@ -175,7 +179,10 @@ export default function Game({ mode: rawMode }) {
     sim.camMode = 'broadcast'
     sim.timeScale = 1
     unlock()
-    sim.reset({ play: playId, seed, los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, difficulty, reads, flip, roster })
+    const spike = playId === 'spike'
+    // a spike lines up in a quick pass look and the QB fires it into the turf
+    sim.reset({ play: spike ? 'out' : playId, seed, los: d.ballOn - 50, toGo: d.toGo, coverage, situation: { clock: d.clock }, difficulty, reads, flip, roster })
+    if (spike) sim.input({ type: 'spike' })
     sim.snap()
     setPreview(null)
     applied.current = null
@@ -202,7 +209,7 @@ export default function Game({ mode: rawMode }) {
       // apply the result once, at the whistle
       if ((s.phase === 'dead' || s.phase === 'over') && s.result && applied.current !== sim.seed) {
         applied.current = sim.seed
-        setDrive((d) => applyResult(d, sim.play.id, s.result))
+        setDrive((d) => applyResult(d, s.result.kind === 'spike' ? 'spike' : sim.play.id, s.result))
         setStage('result')
       }
     },
@@ -220,7 +227,7 @@ export default function Game({ mode: rawMode }) {
   }
 
   const replay = () => {
-    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0, roster: sim.roster })
+    sim.reset({ play: sim.play.id, seed: sim.seed, los: sim.los, toGo: sim.firstDown - sim.los, coverage: sim.coverage, situation: sim.situation, difficulty, reads: sim.reads?.map((r) => r.key) ?? null, flip: sim.flip < 0, roster: sim.roster, inputs: sim.inputLog })
     sim.camMode = 'close'
     sim.timeScale = 0.45
     sim.snap()
@@ -301,6 +308,7 @@ export default function Game({ mode: rawMode }) {
             onStatus={onStatus}
             onEvent={playEvent}
             preview={stage === 'call' ? preview : null}
+            liveControls={stage === 'live' && !replaying}
             los={inPlay ? sim.los : los}
             firstDown={inPlay ? (sim.firstDown >= 50 ? null : sim.firstDown) : firstDownZ >= 50 ? null : firstDownZ}
           />
@@ -332,9 +340,16 @@ export default function Game({ mode: rawMode }) {
                 {downAndDistance(drive)} <em>·</em> {fmtBallOn(drive.ballOn)}
               </span>
               {drive.clockRunning ? (
-                <button className="btn small danger" onClick={timeout} disabled={drive.timeouts === 0}>
-                  {drive.timeouts ? `Timeout (${drive.timeouts})` : 'No timeouts'}
-                </button>
+                <span className="clock-btns">
+                  {drive.down < 4 && (
+                    <button className="btn small" onClick={() => callPlay('spike')} title="Costs a down, stops the clock (about 1 second)">
+                      Spike it
+                    </button>
+                  )}
+                  <button className="btn small danger" onClick={timeout} disabled={drive.timeouts === 0}>
+                    {drive.timeouts ? `Timeout (${drive.timeouts})` : 'No timeouts'}
+                  </button>
+                </span>
               ) : (
                 <span className="clock-note">Clock stopped</span>
               )}
@@ -345,6 +360,8 @@ export default function Game({ mode: rawMode }) {
             <Playbook onSnap={callPlay} onPreview={setPreview} names={names} />
           </div>
         )}
+
+        {stage === 'live' && !replaying && <LiveControls sim={sim} />}
 
         {stage === 'live' && status.phase === 'live' && sim.timeScale < 2 && (
           <button className="btn small skip" onClick={skip}>Skip ⏩</button>
@@ -413,6 +430,9 @@ function IntroCard({ mode, day, drive, offense, defense, onGo, practice, onTeams
 function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun, onPractice, onReplay, qb }) {
   const won = drive ? drive.status === 'won' : saved?.status === 'won'
   const text = drive ? shareText(drive, { mode, day, streak: survivor.streak, url: SITE }) : saved?.text
+  useEffect(() => {
+    if (drive && won) sfx.theme()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // stats are saved by the parent right after this mounts, so re-read them a beat later
   const [daily, setDaily] = useState(() => load('cd.dailyStreak', { streak: 0, played: 0, wins: 0 }))
   useEffect(() => {

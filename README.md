@@ -29,6 +29,21 @@ npm run dev          # http://localhost:5173
 - **Reading the defense:** the defense shows a shell before the snap. It's often a disguise, and it rotates into the real coverage at the snap. The coach suggests what grades out best against the look (from the play × coverage data), and the "Beats Cover X" tags on the play cards come from the same data.
 - **Clock rules:** incompletions and runs out of bounds stop the clock. If you're tackled in bounds, the clock runs while you pick the next play (minimum 8 seconds). Timeouts stop it.
 
+## You're the QB now (live controls)
+
+During a play in Daily, Survivor and Practice you can take over:
+
+- **Throw it yourself:** each read gets a ring on the field and a button (green = open, yellow = tight, red = covered). Tap either one, or press 1–3. A tap during the drop throws as soon as he's set. **Pump fake** (Q) can freeze defenders near the receiver he's looking at, but it costs time. **Throw away** (X) and **Scramble** (S) are always there. Do nothing and the QB works your read progression himself. Once you touch anything he waits on you, so hold it too long and you'll get sacked.
+- **After the catch:** **Juke** (← / →) can freeze nearby tacklers, **Spin** (↑) makes the next tackle much harder, **Get out of bounds** (S) stops the clock, and **Get down** (↓) ends the play where you are.
+- **Spike it:** appears next to Timeout when the clock is running. It takes about 3 seconds to hustle to the line plus 1 second for the spike, and it costs a down.
+- Taps are logged against the simulation's own clock, so instant replay re-runs them exactly. The Daily stays fair: the same taps on the same play give the same result.
+- Head-to-head and Defense mode keep the automatic QB for now, because a live tap would have to be synced to the other browser mid-play.
+- `node scripts/live-qb-e2e.mjs` checks all of this against the dev server.
+
+## Sound
+
+Crowd, touchdown roar, groan, cheer, tackle hit, QB cadence and the victory theme were generated with Viewmax (Everygen) and processed by `scripts/make-sounds.mjs` (trims silence, evens out volume, makes the crowd loop seamless, encodes AAC) into `public/sounds/`. `src/game/sound.js` loads them on the first tap and uses the built-in synth sounds for anything that fails to load.
+
 ## Real moments and win probability
 
 `npm run data` (or `node scripts/build-moments.mjs <cacheDir> 2012 2026`) downloads nflverse play-by-play and builds two files:
@@ -113,6 +128,7 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | `src/pages/Defend.jsx` | Defense mode (hold the lead) |
 | `scripts/build-moments.mjs`, `src/game/moments.js`, `src/game/winprob.js` | nflverse data pipeline, real moments, live win probability |
 | `scripts/build-players.mjs`, `src/game/real.jsx` | Real lineups and logos for test builds |
+| `src/ui/LiveControls.jsx`, `src/components/LiveRings.jsx` | Live QB and ball-carrier controls |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |

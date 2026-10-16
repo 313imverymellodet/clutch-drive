@@ -165,8 +165,15 @@ export class PlaySim {
    * roster: optional real lineup { off: { qb: [number, name], ... }, def: { DL0: [...], ... } } (labels only:
    * it changes jersey numbers and names, never the play, so seeds replay the same).
    */
-  reset({ play = 'dig', seed = 1, los = LOS, toGo = 10, coverage = null, situation = {}, difficulty = 0, reads = null, flip = false, roster = null } = {}) {
+  reset({ play = 'dig', seed = 1, los = LOS, toGo = 10, coverage = null, situation = {}, difficulty = 0, reads = null, flip = false, roster = null, inputs = null } = {}) {
     this.roster = roster
+    // live controls: commands land on the next fixed step and are logged with their sim time, so an
+    // instant replay (or the same Daily with the same taps) plays out identically
+    this.queue = []
+    this.inputLog = []
+    this.replayInputs = inputs ? inputs.map((e) => ({ ...e })) : null
+    this.manual = false // any QB input hands the decisions to the player for the rest of the dropback
+    this.spikeCall = false
     this.los = los
     this.firstDown = Math.min(los + toGo, GOAL_LINE)
     this.play = PLAYS[play] ?? PLAYS.dig
@@ -195,6 +202,7 @@ export class PlaySim {
     this.target = null
     this.readIdx = 0
     this.how = null
+    this.wantThrow = null
 
     const r = (a, b) => a + (b - a) * this.rng()
     this.r = r
@@ -494,6 +502,163 @@ export class PlaySim {
     }
   }
 
+  // ------------------------------------------------------------------ live controls
+  /** Queue a player command: throw {key}, away, scramble, pump, juke {dir}, spin, sideline, slide, spike. */
+  input(cmd) {
+    if (this.replayInputs) return false // a replay re-runs the logged taps
+    if (cmd.type === 'spike' && this.phase === 'presnap') {
+      this.spikeCall = true
+      this.inputLog.push({ t: 0, ...cmd })
+      return true
+    }
+    if (this.phase !== 'live') return false
+    this.queue.push(cmd)
+    return true
+  }
+
+  applyInputs(t) {
+    const due = this.replayInputs ? this.replayInputs.filter((e) => !e.done && e.t <= t + 1e-6) : this.queue.splice(0)
+    for (const e of due) {
+      if (this.replayInputs) e.done = true
+      if (e.type === 'spike') {
+        this.spikeCall = true
+        continue
+      }
+      if (this.command(e, t) && !this.replayInputs) this.inputLog.push({ t, ...e })
+    }
+  }
+
+  /** What the player can do right now (for the on-screen controls). */
+  controls() {
+    if (this.phase !== 'live') return null
+    const qb = this.qb
+    const b = this.ball
+    if (this.play.type === 'pass' && !qb.threw && !this.carrier && !this.spikeCall && (b.holder === qb || b.state === 'snap')) {
+      return {
+        mode: 'qb',
+        reads: (this.reads ?? []).map((r, i) => ({ key: r.key, n: i + 1, name: r.p.name ?? null, number: r.p.number, open: this.openness(r.p, false), pos: r.p.pos })),
+        ready: this.t >= Math.min(this.dropEnd ?? 0, SNAP_TIME + 0.45),
+        manual: this.manual,
+        pumping: (qb.pumpUntil ?? 0) > this.t,
+        queued: this.wantThrow?.key ?? null,
+      }
+    }
+    const c = this.carrier
+    if (c && c.team === 'off' && this.t >= this.catchTime + 0.15 && !(this.play.type === 'run' && c.pos.z < this.los + 1.2 && c.runPath)) {
+      return { mode: 'run', name: c.name ?? `#${c.number}`, juking: c.juke && this.t < c.juke.until, cooldown: Math.max(0, (c.moveReady ?? 0) - this.t), sideline: !!c.toSideline }
+    }
+    return null
+  }
+
+  command(e, t) {
+    const qb = this.qb
+    const b = this.ball
+    const holding = b.holder === qb && !qb.threw && !this.carrier && this.play.type === 'pass'
+    switch (e.type) {
+      case 'throw': {
+        const r = this.reads?.find((x) => x.key === e.key)
+        if (!r || !(holding || b.state === 'snap')) return false
+        this.manual = true
+        this.wantThrow = r.p
+        return true
+      }
+      case 'away':
+        if (!holding || t < SNAP_TIME + 0.3) return false
+        this.manual = true
+        this.throwAway(t)
+        this.message = 'Thrown away. Live to fight another down.'
+        return true
+      case 'scramble':
+        if (!holding) return false
+        this.manual = true
+        this.giveTo(qb, t, 'QB takes off!', true)
+        // break contain toward the side with fewer free rushers, angling upfield
+        let lean = 0
+        for (const d of this.players) if (d.team === 'def' && !d.down && !this.isEngaged(d) && d.pos.z < this.los + 6) lean += Math.sign(d.pos.x - qb.pos.x) / (1 + d.pos.distanceTo(qb.pos))
+        qb.escape = V(qb.pos.x + (lean > 0 ? -5.5 : 5.5), this.los + 0.5)
+        return true
+      case 'pump': {
+        if (!holding || (qb.pumpUntil ?? 0) > t || t < SNAP_TIME + 0.3) return false
+        this.manual = true
+        qb.pumpUntil = t + 0.4
+        this.oneShot(qb, 'Throw')
+        // defenders keyed on the read he's looking at jump it, unless they're sticky in coverage
+        const look = (this.bestRead(false)?.p ?? this.reads[0]?.p)
+        let bit = 0
+        for (const d of this.players) {
+          if (d.team !== 'def' || d.down || d.assign?.type === 'rush' || !look) continue
+          if (d.pos.distanceTo(look.pos) > 9) continue
+          if (this.rng() < (d.blanket ? 0.3 : 0.65)) {
+            d.frozenUntil = t + 0.55
+            bit++
+          }
+        }
+        this.message = bit ? `Pump fake! ${bit > 1 ? 'They' : 'He'} bit!` : 'Pump fake... nobody bit.'
+        this.emit('pump')
+        return true
+      }
+      case 'juke':
+      case 'spin': {
+        const c = this.carrier
+        if (!c || c.team !== 'off' || (c.moveReady ?? 0) > t || t < this.catchTime + 0.15) return false
+        c.moveReady = t + 0.9
+        if (e.type === 'spin') {
+          c.spinUntil = t + 0.45
+          this.message = 'Spin move!'
+        } else {
+          // from the camera, "left" is world +x (the field is mirrored)
+          c.juke = { dir: e.dir, until: t + 0.32 }
+          let fooled = 0
+          for (const d of this.players) {
+            if (d.team !== 'def' || d.down || this.isEngaged(d) || d.pos.distanceTo(c.pos) > 4.5) continue
+            if (this.rng() < 0.6 - (d.tackle - 0.8)) {
+              d.frozenUntil = t + 0.5
+              fooled++
+            }
+          }
+          this.message = fooled ? 'JUKED HIM!' : 'Juke!'
+        }
+        this.emit('move')
+        return true
+      }
+      case 'sideline': {
+        const c = this.carrier
+        if (!c || c.team !== 'off') return false
+        c.toSideline = true
+        this.message = 'Heading for the sideline!'
+        return true
+      }
+      case 'slide': {
+        const c = this.carrier
+        if (!c || c.team !== 'off' || t < this.catchTime + 0.15) return false
+        this.endPlay(t, 'tackle')
+        const { gain, first } = this.result
+        this.message = `${who(c)} gets down after ${gain} yard${Math.abs(gain) === 1 ? '' : 's'}${first ? ' — FIRST DOWN!' : ''}`
+        c.pendingFall = t + 0.05
+        this.emit('slide')
+        return true
+      }
+      default:
+        return false
+    }
+  }
+
+  /** Clock-stopping spike: costs a down, takes about a second. */
+  spike(t) {
+    const b = this.ball
+    const qb = this.qb
+    this.oneShot(qb, 'Throw')
+    qb.threw = true
+    b.state = 'loose'
+    b.holder = null
+    b.vel.set(0, -6, 1.5)
+    this.phase = 'dead'
+    this.deadTime = t
+    this.result = { good: false, kind: 'spike', gain: 0, first: false, spot: this.los, elapsed: 1 }
+    this.message = 'Spiked! Clock stopped.'
+    this.emit('spike')
+  }
+
   // ------------------------------------------------------------------ steering
   look(p, dx, dz) {
     p.lookPt ??= new THREE.Vector3()
@@ -567,6 +732,7 @@ export class PlaySim {
     if (this.phase === 'presnap') return
     this.t += dt
     const t = this.t
+    this.applyInputs(t)
 
     for (const p of this.players) {
       if (p.down) {
@@ -794,6 +960,7 @@ export class PlaySim {
     }
 
     // ---- passes: drop, then work the progression
+    if (this.spikeCall && b.holder === p && !p.threw && t >= SNAP_TIME + 0.12) return this.spike(t)
     if (b.holder !== p && p.threw) {
       this.brake(p, dt)
       if (p.locked && t > p.lockedAt + 1.25) p.locked = false
@@ -805,12 +972,23 @@ export class PlaySim {
       if (b.state === 'held' && b.holder === p && t >= this.aim.release) this.release(t)
       return
     }
+    // the player's call: throw as soon as he's set (a quick release cuts the drop short)
+    const want = this.wantThrow
+    if (want && b.holder === p && t >= Math.min(this.dropEnd, SNAP_TIME + 0.45) && t >= (p.pumpUntil ?? 0)) {
+      this.wantThrow = null
+      return this.startThrow(want, t)
+    }
     if (t < this.dropEnd) {
       this.steer(p, tmp.set(0, 0, this.los - this.play.drop), 4.4, dt)
       return this.look(p, 0, 20)
     }
     this.brake(p, dt)
     if (b.holder !== p) return
+    if (this.manual) {
+      // your QB: eyes on the best option, waiting on you (hold it too long and you'll wear a sack)
+      p.face = (this.bestRead(false)?.p ?? this.reads[0]?.p)?.pos ?? null
+      return
+    }
     const read = this.reads[this.readIdx]
     if (!read) return
     p.face = read.p.pos // eyes on the current read
@@ -850,7 +1028,7 @@ export class PlaySim {
    * then break on it), minus the catch radius that decides contested balls. >0 = open.
    * The QB isn't perfect: a little noise means he sometimes sees a window that isn't there.
    */
-  openness(R) {
+  openness(R, noisy = true) {
     if (!R || R.down || !R.route) return -9
     this.planThrow(this.t, R, true)
     const { point, time } = this._probe
@@ -871,14 +1049,14 @@ export class PlaySim {
       if (a?.type === 'man' && a.target === R) dist = Math.min(dist, d.pos.distanceTo(R.pos) * (d.blanket ? 0.6 : 1))
       nd = Math.min(nd, dist)
     }
-    const misread = (this.rng() - 0.5) * (this.pressured ? 2.2 : 1.3)
+    const misread = noisy ? (this.rng() - 0.5) * (this.pressured ? 2.2 : 1.3) : 0
     return nd - reach + misread
   }
 
-  bestRead() {
+  bestRead(noisy = true) {
     let best = null
     for (const r of this.reads) {
-      const o = this.openness(r.p)
+      const o = this.openness(r.p, noisy)
       if (!best || o > best.open) best = { p: r.p, open: o }
     }
     return best
@@ -1006,11 +1184,28 @@ export class PlaySim {
       this.steer(p, tmp, fast, dt, 22)
       return
     }
+    // a called scramble: get outside the pocket first
+    if (p.escape) {
+      if (p.pos.distanceTo(p.escape) > 1.5 && p.pos.z < this.los) {
+        this.steer(p, p.escape, 7.2, dt, 26)
+        return
+      }
+      p.escape = null
+    }
+    // your moves: a juke cuts hard to one side, a spin keeps you going through contact
+    if (p.juke && t < p.juke.until) {
+      tmp.set(p.juke.dir * 6, 0, 2.2).add(p.pos)
+      this.steer(p, tmp, 7.6, dt, 40)
+      return
+    }
     const clock = this.situation.clock ?? 120
     const nearSideline = Math.abs(p.pos.x) > SIDELINE - 7
     const sidelineCatch = this.play.sideline?.includes(p.key) && p !== this.qb
-    if ((sidelineCatch && since > 0.3) || (clock < 25 && nearSideline && since > 0.3)) {
-      this.steer(p, tmp.set(Math.sign(p.pos.x) * (SIDELINE + 3), 0, p.pos.z + p.cutBias * 3 + 1.2), 6.5, dt, 14)
+    if (p.toSideline || (sidelineCatch && since > 0.3) || (clock < 25 && nearSideline && since > 0.3)) {
+      // behind the line, get back to it first (bending toward the near side); past it, bend for the boundary
+      const side = Math.sign(p.pos.x || p.cutBias || 1)
+      if (p.pos.z < this.los + 1) this.steer(p, tmp.set(p.pos.x + side * 4, 0, this.los + 3), 6.6, dt, 16)
+      else this.steer(p, tmp.set(side * (SIDELINE + 3), 0, p.pos.z + p.cutBias * 3 + 1.2), 6.5, dt, 14)
       return
     }
     let bestScore = -Infinity
@@ -1033,7 +1228,7 @@ export class PlaySim {
       if (s > bestScore) (bestScore = s), (bestAngle = a)
     }
     tmp.set(Math.sin(bestAngle), 0, Math.cos(bestAngle)).multiplyScalar(6).add(p.pos)
-    const speed = p === this.qb ? (p.scramble ? 6.8 : 6.4) : p === this.rb ? 7.2 : since < 0.4 ? 4.8 : 7.3
+    const speed = p === this.qb ? (p.scramble ? 7.3 : 6.4) : p === this.rb ? 7.2 : since < 0.4 ? 4.8 : 7.3
     this.steer(p, tmp, speed, dt, 16)
   }
 
@@ -1041,7 +1236,15 @@ export class PlaySim {
   actDefense(p, t, dt) {
     const a = p.assign
     p.hold = null
-    if (this.carrier) {
+    if (p.frozenUntil > t) {
+      // bit on the fake (or got juked): planted for a beat
+      this.brake(p, dt, 9)
+      p.face = (this.carrier ?? this.qb).pos
+      return
+    }
+    // a QB scramble: defenders in coverage have their backs turned, so they stay with their man/zone a beat
+    const scrambleRead = this.carrier?.scramble && a.type !== 'rush' && t < this.catchTime + 0.6 + p.react
+    if (this.carrier && !scrambleRead) {
       // a draw works because the rush keeps charging at the quarterback for a beat after the handoff
       if (this.play.run?.draw && a.type === 'rush' && t < this.catchTime + 0.55) return this.rushQB(p, t, dt)
       if (this.isEngaged(p)) {
@@ -1296,7 +1499,7 @@ export class PlaySim {
     if (!c || t < this.catchTime + 0.45) return
     const blast = this.how === 'blast'
     for (const d of this.players) {
-      if (d.team !== 'def' || d.locked || d.down || this.isEngaged(d)) continue
+      if (d.team !== 'def' || d.locked || d.down || this.isEngaged(d) || d.frozenUntil > t) continue
       const dist = d.pos.distanceTo(c.pos)
       if (dist >= 1.8) continue
       tmp.copy(c.vel).setY(0)
@@ -1308,11 +1511,12 @@ export class PlaySim {
       d.yaw = Math.atan2(c.pos.x - d.pos.x, c.pos.z - d.pos.z)
       d.vel.set(Math.sin(d.yaw), 0, Math.cos(d.yaw)).multiplyScalar(4)
       if (blast) this.emit('blast')
-      const make = d.tackle - (fromBehind ? 0.14 : 0) - (d.role === 'DL' && c !== this.rb ? 0.1 : 0) - (blast ? 0.16 : 0)
+      const spinning = c.spinUntil > t
+      const make = d.tackle - (fromBehind ? 0.14 : 0) - (d.role === 'DL' && c !== this.rb ? 0.1 : 0) - (blast ? 0.16 : 0) - (spinning ? 0.3 : 0)
       if (this.rng() > make) {
         d.vel.multiplyScalar(0.6)
         d.yaw += (this.rng() - 0.5) * 0.9
-        this.message = blast ? 'QB BLAST! Runs right through him!' : 'Broke a tackle!'
+        this.message = blast ? 'QB BLAST! Runs right through him!' : spinning ? 'SPIN MOVE! Broke a tackle!' : 'Broke a tackle!'
         c.cutBias = -c.cutBias || 0.3
         this.emit('brokenTackle')
         continue

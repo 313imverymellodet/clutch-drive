@@ -7,6 +7,7 @@ import { Field } from '../components/Field'
 import { Stadium } from '../components/Stadium'
 import { BlobShadow, Football } from '../components/Props'
 import { RouteArt } from '../components/RouteArt'
+import { LiveRings } from '../components/LiveRings'
 import { FIXED_DT, LOS } from '../sim/playSim'
 
 const focus = new THREE.Vector3(0, 0, LOS + 5)
@@ -18,7 +19,7 @@ const tmpTarget = new THREE.Vector3()
  * Draws a PlaySim. `version` changes whenever the sim is reset so the 22 characters are rebuilt.
  * offense/defense are NFL team objects from src/data/nflTeams.js.
  */
-export default function PlayScene({ sim, version, offense, defense, onStatus, onEvent, los = LOS, firstDown = null, preview = null, homeIsDefense = false }) {
+export default function PlayScene({ sim, version, offense, defense, onStatus, onEvent, los = LOS, firstDown = null, preview = null, homeIsDefense = false, liveControls = false }) {
   const gltf = useGLTF(MODEL_URL)
   const { camera, size, gl, scene } = useThree()
   const ballRef = useRef()
@@ -128,6 +129,7 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
         <BlobShadow key={`s${version}-${i}`} ref={(el) => (shadowRefs.current[i] = el)} size={1.5} />
       ))}
       <Football ref={ballRef} />
+      <LiveRings sim={sim} enabled={liveControls} />
       {preview && sim.phase === 'presnap' && (
         <RouteArt
           play={typeof preview === 'string' ? preview : preview.play}

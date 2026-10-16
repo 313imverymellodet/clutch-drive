@@ -188,6 +188,7 @@ export function headlineFor(result) {
   if (result.kind === 'interception') return { big: 'INTERCEPTED!', tone: 'bad' }
   if (result.kind === 'sack') return { big: 'SACKED!', tone: 'bad' }
   if (result.kind === 'incomplete') return { big: 'INCOMPLETE', tone: 'bad' }
+  if (result.kind === 'spike') return { big: 'SPIKED', tone: 'ok' }
   if (result.how === 'blast' && result.gain >= 3) return { big: 'QB BLAST!', tone: result.first ? 'good' : 'ok' }
   if (result.first) return { big: 'FIRST DOWN!', tone: 'good' }
   if (result.gain <= 0) return { big: 'STUFFED!', tone: 'bad' }

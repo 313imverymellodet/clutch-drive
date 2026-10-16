@@ -116,6 +116,7 @@ export function tickClock(d, seconds) {
 
 function emojiFor(result) {
   if (result.kind === 'touchdown') return '🏈'
+  if (result.kind === 'spike') return '⏸️'
   if (result.kind === 'interception') return '❌'
   if (result.kind === 'incomplete' || result.gain <= 0) return '🟥'
   if (result.first) return '🟩'
@@ -130,7 +131,8 @@ export function applyResult(d, playId, result) {
 }
 
 function applyResultRaw(d, playId, result) {
-  const elapsed = Math.max(2, (result.elapsed ?? 4) - 0.35)
+  // a spike only burns about a second; every other snap takes at least two
+  const elapsed = result.kind === 'spike' ? 1 : Math.max(2, (result.elapsed ?? 4) - 0.35)
   const clock = Math.max(0, d.clock - elapsed)
   const gain = result.kind === 'incomplete' ? 0 : result.gain
   const ballOn = Math.min(100, Math.max(0, d.ballOn + gain))
