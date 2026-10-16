@@ -210,6 +210,7 @@ export default function Game({ mode: rawMode }) {
       if ((s.phase === 'dead' || s.phase === 'over') && s.result && applied.current !== sim.seed) {
         applied.current = sim.seed
         setDrive((d) => applyResult(d, s.result.kind === 'spike' ? 'spike' : sim.play.id, s.result))
+        if (s.result.first && s.result.kind !== 'touchdown') playEvent({ type: 'firstDown' }) // the crowd loves moving the chains
         setStage('result')
       }
     },

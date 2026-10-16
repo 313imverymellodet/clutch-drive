@@ -174,6 +174,7 @@ export function MuteButton() {
       onClick={() => {
         unlock()
         setMuted(!m)
+        if (m) sfx.check() // just unmuted: a quick crowd pop so you know it's working
       }}
     >
       {m ? '🔇' : '🔊'}

@@ -42,7 +42,7 @@ During a play in Daily, Survivor and Practice you can take over:
 
 ## Sound
 
-Crowd, touchdown roar, groan, cheer, tackle hit, QB cadence and the victory theme were generated with Viewmax (Everygen) and processed by `scripts/make-sounds.mjs` (trims silence, evens out volume, makes the crowd loop seamless, encodes AAC) into `public/sounds/`. `src/game/sound.js` loads them on the first tap and uses the built-in synth sounds for anything that fails to load.
+Crowd, touchdown roar, groan, cheer, tackle hit, QB cadence and the victory theme were generated with Viewmax (Everygen) and processed by `scripts/make-sounds.mjs` (trims silence, evens out volume, makes the crowd loop seamless, encodes AAC) into `public/sounds/`. `src/game/sound.js` downloads them as the game loads, decodes them on the first tap, and holds a clip asked for while audio is still starting (like the cadence on "Take the field") until it can play. It uses the built-in synth sounds for anything that fails to load. On iPhones it asks to be treated as media playback, so sound still plays with the silent switch on.
 
 ## Real moments and win probability
 
@@ -55,15 +55,15 @@ The Daily walks through the moments in a fixed shuffle (no repeats for about 11 
 
 Data credit (required by the CC BY 4.0 license): real game situations and the win-probability model come from [nflverse](https://github.com/nflverse/nflverse-data) play-by-play data. The credit appears on the landing page footer and the end-of-drive history card.
 
-## Real branding (test builds only)
+## Real branding
 
-Preview and local builds show **real player names, jersey numbers and team logos**; production doesn't.
+The game shows **real player names, jersey numbers and team logos** in dev, previews and (since `REAL_BRANDING=1` was set on the Vercel project's Production environment) on the live site.
 
 - `scripts/build-players.mjs` (part of `npm run data`) writes `src/data/players.json`. For each real moment it uses the 22 players those teams actually leaned on in that game: the QB who ran that drive, the most-targeted receivers and tight end, the lead back, and the defenders with the most tackles, sacks, hits and pass breakups. Numbers and names come from nflverse weekly rosters. Practice, Defense and Head-to-Head use each team's current lineup from the latest season.
 - Names show up in every play call ("Complete to Plaxico Burress"), the read picker, the intro ("Charlie Batch is under center"), the landing page and the "what really happened" card. Jerseys carry the real numbers. Names are labels only; they never change how a play resolves, so seeds and head-to-head sync are unaffected.
 - Logos load from ESPN's logo CDN (CORS-enabled) and appear in the scorebug, intro, team pickers, landing hero and painted at midfield.
-- The switch is `__REAL__` in `vite.config.js`. It's on for dev and Vercel **preview** builds and off when `VERCEL_ENV=production`. `REAL_BRANDING=1` or `REAL_BRANDING=0` overrides it. When it's off, the lineup data isn't bundled at all and nothing loads from ESPN.
-- Real names and NFL logos generally need NFLPA and NFL licenses for a public game, so keep the switch off in production until that's sorted.
+- The switch is `__REAL__` in `vite.config.js`: on for dev and previews, and for production only when `REAL_BRANDING=1` (currently set in Vercel). To turn it off live, remove that variable or set it to `0` (`npx vercel env rm REAL_BRANDING production`) and redeploy. When it's off, the lineup data isn't bundled at all and nothing loads from ESPN.
+- Real names and NFL logos generally need NFLPA and NFL licenses for a public game; the variable is the one place to switch them off.
 
 ## Football AI
 
