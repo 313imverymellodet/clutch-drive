@@ -146,6 +146,7 @@ export default function Game({ mode: rawMode }) {
     unlock()
     startAmbience()
     sfx.whistle(0.25)
+    sfx.cadence()
     huddleFrom.current = drive.clock
     setStage('call')
   }
@@ -413,6 +414,9 @@ function IntroCard({ mode, day, drive, offense, defense, onGo, practice, onTeams
 function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun, onPractice, onReplay, qb }) {
   const won = drive ? drive.status === 'won' : saved?.status === 'won'
   const text = drive ? shareText(drive, { mode, day, streak: survivor.streak, url: SITE }) : saved?.text
+  useEffect(() => {
+    if (drive && won) sfx.theme()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   // stats are saved by the parent right after this mounts, so re-read them a beat later
   const [daily, setDaily] = useState(() => load('cd.dailyStreak', { streak: 0, played: 0, wins: 0 }))
   useEffect(() => {
