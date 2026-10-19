@@ -1,0 +1,44 @@
+{
+ "source": "sportsdataverse hoopR NBA play-by-play (ESPN)",
+ "seasons": [
+  2022,
+  2026
+ ],
+ "rows": 179603,
+ "logLoss": {
+  "testRows": 35701,
+  "ours": 0.2774,
+  "constant": 0.6868,
+  "espnRows": 18001,
+  "espnGames": 523,
+  "oursOnEspnRows": 0.2566,
+  "espn": 0.2556,
+  "closeRows": 2402,
+  "oursClose": 0.3569,
+  "espnClose": 0.3805
+ },
+ "names": [
+  "diff_per_root_min",
+  "diff",
+  "poss_per_root_min",
+  "poss",
+  "timeout_edge",
+  "timeout_edge_per_root_min",
+  "diff_cubed_scaled",
+  "home",
+  "diff_per_min",
+  "poss_per_min"
+ ],
+ "w": [
+  0.652566,
+  -0.003439,
+  0.294123,
+  -0.064766,
+  0.137895,
+  -0.054873,
+  0.118711,
+  0.070759,
+  -0.109899,
+  -0.059627
+ ]
+}

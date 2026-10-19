@@ -7,6 +7,7 @@ import { aiCoverage, aiSet, aiWillFoul, applyFoul, applyPossession, boostsFor, f
 import { hoopsSound, hsfx, setChant } from '../hoops/sound'
 import { CoveragePicker, FreeThrows, HoopsBug, HoopsControls, NbaTeamSelect, SetPicker, hoopsHeadline } from '../hoops/HoopsUI'
 import { ShareButton, WPChart, WinProbMeter } from '../ui/GameUI'
+import { HOOPS_DATA_CREDIT, HOOPS_DATA_URL, hoopsMomentForDay, hoopsMomentLabel, hoopsRealOutcome, scenarioFromHoopsMoment } from '../hoops/moments'
 import { TeamLogo } from '../game/real'
 import { dayNumber, todayKey } from '../game/drive'
 import { load, save } from '../game/storage'
@@ -23,7 +24,7 @@ export default function Hoops({ mode: rawMode }) {
   const day = dayNumber(dateKey)
   const [practice, setPractice] = useState(() => load('cd.hoops.practice', { you: 'LAL', them: 'BOS', n: 0 }))
   const scenario = useMemo(
-    () => (mode === 'daily' ? makeScenario(`daily-${dateKey}`) : makeScenario(`practice-${practice.n}`, { you: practice.you, them: practice.them })),
+    () => (mode === 'daily' ? scenarioFromHoopsMoment(hoopsMomentForDay(dateKey), `daily-${dateKey}`) : makeScenario(`practice-${practice.n}`, { you: practice.you, them: practice.them })),
     [mode, dateKey, practice.n, practice.you, practice.them],
   )
   const saved = mode === 'daily' ? load(`cd.hoops.${dateKey}`, null) : null
@@ -284,6 +285,7 @@ export default function Hoops({ mode: rawMode }) {
         {stage === 'intro' && (
           <div className="intro card">
             <div className="eyebrow">{mode === 'daily' ? `Daily Hoops #${day}` : 'Practice'} · Clutch Hoops beta</div>
+            {scenario.moment && <span className="moment-tag">📅 Real moment · {hoopsMomentLabel(scenario.moment)}</span>}
             <h2>
               <TeamLogo abbr={you.abbr} league="nba" size={34} className="team-logo intro-logo" />
               <span style={{ color: you.jersey }}>{you.city} {you.name}</span> trail by {g.scoreThem - g.scoreYou}
@@ -292,6 +294,7 @@ export default function Hoops({ mode: rawMode }) {
               {fmtClock(g.clock)} left in the 4th, your ball out of a timeout against the {them.name}. You have {g.timeouts} more timeout{g.timeouts === 1 ? '' : 's'}.
               Call a set on offense, a coverage on defense. Take over any possession: pass, drive, step back, and time your shot at the top of the jump.
             </p>
+            {scenario.moment && <p className="fine">This really happened. Can you beat what the real {you.name} did?</p>}
             <ul className="rules">
               <li>Behind late? <b>Foul</b> to stop the clock. Ahead? They’ll foul you: hit your free throws.</li>
               <li>A <b>timeout</b> after a stop or a make advances the ball and saves about 4 seconds.</li>
@@ -336,7 +339,7 @@ export default function Hoops({ mode: rawMode }) {
         )}
       </div>
 
-      {stage === 'over' && <HoopsOver g={saved && g.status === 'playing' ? null : g} saved={saved} mode={mode} day={day} onAgain={() => (mode === 'daily' ? navigate('/hoops?mode=practice') : newPractice())} />}
+      {stage === 'over' && <HoopsOver g={saved && g.status === 'playing' ? null : g} moment={scenario.moment} saved={saved} mode={mode} day={day} onAgain={() => (mode === 'daily' ? navigate('/hoops?mode=practice') : newPractice())} />}
     </main>
   )
 }
@@ -367,7 +370,7 @@ function defTip(g) {
   return null
 }
 
-function HoopsOver({ g, saved, mode, day, onAgain }) {
+function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
   const won = g ? g.status === 'won' : saved?.status === 'won'
   const text = g ? shareText(g, { day, url: `${SITE}/hoops`, mode }) : saved?.text
   return (
@@ -384,6 +387,7 @@ function HoopsOver({ g, saved, mode, day, onAgain }) {
         )}
         <div className="grid-emoji">{g ? g.log.map((p) => p.emoji).join('') : saved?.grid}</div>
         {g && <WPChart trail={[g.wp0, ...g.log.map((p) => p.wp), won ? 1 : 0]} />}
+        {moment && <HoopsHistory m={moment} won={won} />}
         <p className="fine">🟩 bucket · 💦 three · 🎯 free throws · 🟥 empty · 🔒 stop · 🟧 they scored</p>
         <div className="modal-actions">
           {text && <ShareButton text={text} />}
@@ -392,6 +396,19 @@ function HoopsOver({ g, saved, mode, day, onAgain }) {
         </div>
         <p className="fine"><Link to="/">← Home</Link></p>
       </div>
+    </div>
+  )
+}
+
+function HoopsHistory({ m, won }) {
+  const realWon = m.won === 1
+  const verdict = won && !realWon ? '🔥 You beat history!' : won ? '✅ You matched history.' : realWon ? '📜 History wins this one.' : '🤝 Same as history.'
+  return (
+    <div className="history">
+      <b>What really happened · {hoopsMomentLabel(m)}</b>
+      {hoopsRealOutcome(m)}
+      {m.wp != null && <> ESPN’s model, which also weighs the pregame betting line, gave them {Math.round(m.wp * 100)}% at that moment.</>} <b style={{ display: 'inline', fontSize: 12 }}>{verdict}</b>
+      <p className="credit">{HOOPS_DATA_CREDIT} <a href={HOOPS_DATA_URL} target="_blank" rel="noreferrer">hoopR</a></p>
     </div>
   )
 }

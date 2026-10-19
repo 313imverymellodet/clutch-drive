@@ -1,6 +1,7 @@
 import { BEATS, COVERAGE_IDS, SETS, SET_IDS } from './sets'
 import { NBA_TEAMS } from './teams'
 import { hashString, rngFrom } from '../game/drive'
+import WP from '../data/hoopsWpModel.json'
 
 /*
  * The end of a game, possession by possession. The player has the ball first, trailing late.
@@ -67,23 +68,25 @@ export function newGame(sc) {
   return g
 }
 
-/** Estimated win probability (no real model yet): remaining margin as a normal around the current one. */
+/**
+ * Win probability for you: a logistic model fit by scripts/build-hoops-moments.mjs on the last 6:00 of real
+ * 4th quarters (sportsdataverse hoopR NBA play-by-play, ESPN data). Inputs: score margin, seconds left, who has
+ * the ball, timeouts and home court. The feature list must match features() in that script.
+ */
 export function winProb(g, clock = g.clock) {
   const diff = g.scoreYou - g.scoreThem
   if (g.status === 'won') return 1
   if (g.status === 'lost') return 0
   if (clock <= 0) return diff > 0 ? 1 : diff < 0 ? 0 : 0.5
-  const mean = diff + (g.poss === 'you' ? 1.05 : -1.05)
-  const sd = 1.35 * Math.sqrt(clock / 12 + 0.45)
-  return Math.min(0.995, Math.max(0.005, phi(mean / sd)))
-}
-
-function phi(x) {
-  // Abramowitz-Stegun normal CDF
-  const t = 1 / (1 + 0.2316419 * Math.abs(x))
-  const d = 0.3989423 * Math.exp((-x * x) / 2)
-  const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))))
-  return x > 0 ? 1 - p : p
+  const s = Math.sqrt(clock / 60 + 0.05)
+  const poss = g.poss === 'you' ? 1 : -1
+  const to = (g.timeouts ?? 0) - (g.theirTimeouts ?? 0)
+  const d = Math.max(-15, Math.min(15, diff))
+  const home = g.youHome ? 1 : -1
+  const x = [d / s, d, poss / s, poss, to, to / s, (d * d * d) / (s * s * s * 100), home, d / (s * s), poss / (s * s)]
+  let z = 0
+  for (let i = 0; i < x.length; i++) z += WP.w[i] * x[i]
+  return Math.min(0.995, Math.max(0.005, 1 / (1 + Math.exp(-z))))
 }
 
 /** A per-possession RNG that's the same for everyone on the same Daily possession. */
