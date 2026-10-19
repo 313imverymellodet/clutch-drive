@@ -72,7 +72,7 @@ export class HoopsSim {
    * roster: optional { off: { PG: [number, name], ... }, def: {...} }. inputs: logged taps (replays).
    * milk: the offense is protecting a lead and runs clock before shooting. flip: mirror the set.
    */
-  reset({ set = 'pnr', seed = 1, coverage = null, shotClock = 24, gameClock = 120, roster = null, inputs = null, milk = false, flip = false, user = false } = {}) {
+  reset({ set = 'pnr', seed = 1, coverage = null, shotClock = 24, gameClock = 120, roster = null, inputs = null, milk = false, flip = false, user = false, userDef = false, boosts = null } = {}) {
     this.set = SETS[set] ?? SETS.pnr
     this.setId = SETS[set] ? set : 'pnr'
     this.seed = seed
@@ -84,6 +84,10 @@ export class HoopsSim {
     this.milk = milk
     this.flip = flip ? -1 : 1
     this.user = user // the player can take over this possession (their offense)
+    this.userDef = userDef // the player is defending: contest, double team, foul
+    this.boosts = boosts // hot hands: { SG: 0.05 } added to that player's shooting
+    this.contestReady = 0
+    this.doubleReady = 0
     this.t = 0
     this.phase = 'presnap'
     this.players = []
@@ -105,9 +109,10 @@ export class HoopsSim {
     const fx = this.flip
     for (const pos of POSITIONS) {
       const path = (this.set.paths[pos] ?? [[0, 0, 26]]).map(([t, x, z]) => ({ t, x: x * fx, z }))
-      const r = RATINGS[pos]
+      const b = boosts?.[pos] ?? 0
+      const r = b ? { ...RATINGS[pos], three: RATINGS[pos].three + b, mid: RATINGS[pos].mid + b, finish: RATINGS[pos].finish + b * 0.7 } : RATINGS[pos]
       const real = roster?.off?.[pos]
-      this.add({ team: 'off', key: pos, path, rating: r, number: real?.[0] ?? NUMBERS[pos], name: real?.[1] ?? null, speed: r.speed, pos: V(path[0].x, path[0].z) })
+      this.add({ team: 'off', key: pos, path, rating: r, hot: b > 0, number: real?.[0] ?? NUMBERS[pos], name: real?.[1] ?? null, speed: r.speed, pos: V(path[0].x, path[0].z) })
     }
     this.byKey = Object.fromEntries(this.players.map((p) => [p.key, p]))
     for (const pos of POSITIONS) {
@@ -173,6 +178,10 @@ export class HoopsSim {
       this.intentionalFoul(B, t)
       return true
     }
+    if (e.type === 'contest' || e.type === 'double') {
+      if (!this.userDef || !B || B.team !== 'off') return false
+      return e.type === 'contest' ? this.userContest(B, t) : this.userDouble(B, t)
+    }
     if (!this.user || !B || B.team !== 'off') return false
     if (e.type === 'release') {
       if (!B.gatherAt || B.released) return false
@@ -213,12 +222,66 @@ export class HoopsSim {
     }
   }
 
+  /** Your hand-up: right as he rises it's a real contest; too early and your man bites and gives up a lane. */
+  userContest(B, t) {
+    if (this.contestReady > t) return false
+    this.contestReady = t + 1
+    let d = null
+    let best = Infinity
+    for (const x of this.defenders) {
+      const dd = x.pos.distanceTo(B.pos)
+      if (dd < best) (best = dd), (d = x)
+    }
+    d.oneShot = 'Contest'
+    if (B.gatherAt && !B.released) {
+      d.oneShotUntil = t + 0.7
+      d.closeUntil = t + 0.7
+      d.contestBoost = t + 0.9
+      this.message = 'Hand in his face!'
+    } else {
+      d.oneShotUntil = t + 0.6
+      d.frozenUntil = t + 0.8
+      this.message = `${who(d)} bit! He's got a lane.`
+      if (!B.driving && distToHoop(B.pos) < 27) {
+        B.driving = true
+        B.path = null
+      }
+    }
+    this.emit('contest')
+    return true
+  }
+
+  /** Send a second defender at the ball. The trap can force a turnover, but somebody is left open. */
+  userDouble(B, t) {
+    if (this.doubleReady > t) return false
+    this.doubleReady = t + 2.5
+    let helper = null
+    let best = Infinity
+    for (const x of this.defenders) {
+      if (x === B.defender) continue
+      const dd = x.pos.distanceTo(B.pos)
+      if (dd < best) (best = dd), (helper = x)
+    }
+    if (!helper) return false
+    helper.doubleUntil = t + 1.6
+    helper.doubleTarget = B
+    B.trappedUntil = t + 1.6
+    B.trappedAt = t
+    B.pressuredUntil = t + 1.6
+    this.message = 'Double team!'
+    this.emit('double')
+    return true
+  }
+
   /** What the player can do right now (on-screen controls + rings). */
   controls() {
     if (this.phase !== 'live') return null
     const b = this.ball
     const B = b.state === 'held' ? b.holder : null
-    if (!this.user) return B ? { mode: 'defense', canFoul: true } : null
+    if (!this.user) {
+      if (!B || B.team !== 'off') return null
+      return { mode: 'defense', canFoul: true, interactive: this.userDef, shooting: !!(B.gatherAt && !B.released), canContest: this.contestReady <= this.t, canDouble: this.doubleReady <= this.t, trapped: B.trappedUntil > this.t }
+    }
     if (!B && b.state !== 'pass') return null
     if (B?.gatherAt) {
       const progress = (this.t - B.gatherAt) / 1.05
@@ -228,10 +291,10 @@ export class HoopsSim {
     const order = this.reads.map((r) => r.key)
     return {
       mode: 'offense',
-      holder: { key: B.key, name: B.name, number: B.number },
+      holder: { key: B.key, name: B.name, number: B.number, hot: B.hot },
       mates: this.offense
         .filter((p) => p !== B)
-        .map((p) => ({ key: p.key, n: order.indexOf(p.key) + 1 || null, name: p.name, number: p.number, open: this.openness(p, B, false), pos: p.pos })),
+        .map((p) => ({ key: p.key, n: order.indexOf(p.key) + 1 || null, name: p.name, number: p.number, open: this.openness(p, B, false), pos: p.pos, hot: p.hot })),
       self: this.spaceOf(B),
       layup: distToHoop(B.pos) < 6.5,
       three: isThree(B.pos),
@@ -303,6 +366,11 @@ export class HoopsSim {
       if (l.u < 0.25 || l.u > 0.85 || l.d > 1.7) continue
       const p = 0.22 * (1 - l.d / 1.7) * (B.pos.distanceTo(lead) > 22 ? 1.4 : 1)
       if (p > best) (best = p), (thief = d)
+    }
+    // passing out of a trap is risky
+    if (B.trappedUntil > t) {
+      const trapper = this.defenders.find((x) => x.doubleUntil > t && x.doubleTarget === B)
+      if (trapper && best < 0.14) (best = 0.14), (thief = trapper)
     }
     const stolen = thief && this.rng() < best
     this.pass = { from: B, to: R, lead, release: t + PASS_RELEASE, arrive: t + PASS_RELEASE + flight, thief: stolen ? thief : null }
@@ -381,6 +449,8 @@ export class HoopsSim {
     let contest = c < 1.5 ? 0.64 : c < 3 ? 0.82 : c < 5 ? 0.93 : c < 7 ? 0.98 : c > 9 ? 1.05 : 1
     if (d < 6.5 && c < 3.5) contest -= 0.1 * (contester?.rating.size ?? 0.5)
     if (B.stepback && t < B.stepback.until + 0.6) contest *= 0.96
+    const greatContest = contester?.contestBoost > t && c < 4.5
+    if (greatContest) contest *= 0.9
     const pMake = Math.max(0.03, Math.min(0.94, base * contest * timing))
     const made = this.rng() < pMake
     const foulP = d < 6.5 && c < 3 ? 0.14 : c < 2 ? 0.06 : 0.012
@@ -394,7 +464,7 @@ export class HoopsSim {
     b.t0 = t
     b.t1 = t + flight
     b.arc = d < 6.5 ? 2 : 4 + d * 0.18
-    this.shot = { shooter: B, made, fouled, three, d, contest: c, contester, grade, pMake, release: t, label: shotLabel(B.pos), buzzer: t > this.gameClock - 0.01 }
+    this.shot = { shooter: B, made, fouled, three, d, contest: c, contester, grade, pMake, release: t, label: shotLabel(B.pos), buzzer: t > this.gameClock - 0.01, greatContest }
     if (contester && c < 7) {
       contester.oneShot = 'Contest'
       contester.oneShotUntil = t + 0.7
@@ -419,14 +489,14 @@ export class HoopsSim {
       b.vel.set((this.rng() - 0.5) * 14, 6 + this.rng() * 4, 3 + this.rng() * 8)
       b.pos.copy(b.to)
       const kind = s.fouled ? 'fouled' : 'miss'
-      this.end(t, { kind, points: 0, fts: s.fouled ? (s.three ? 3 : 2) : 0, shot: this.shotInfo() }, s.fouled ? `Fouled on the ${s.label}! ${s.three ? 3 : 2} free throws.` : `${who_} misses the ${s.label}${s.contest < 3 ? ' (well contested)' : ''}.${gradeNote(s)}`)
+      this.end(t, { kind, points: 0, fts: s.fouled ? (s.three ? 3 : 2) : 0, shot: this.shotInfo() }, s.fouled ? `Fouled on the ${s.label}! ${s.three ? 3 : 2} free throws.` : `${who_} misses the ${s.label}${s.greatContest ? '. Great contest!' : s.contest < 3 ? ' (well contested).' : '.'}${gradeNote(s)}`)
       this.emit('rim')
     }
   }
 
   shotInfo() {
     const s = this.shot
-    return { by: s.shooter.key, number: s.shooter.number, name: s.shooter.name, three: s.three, label: s.label, contest: +s.contest.toFixed(1), grade: s.grade, pMake: +s.pMake.toFixed(2), release: s.release, buzzer: s.buzzer }
+    return { by: s.shooter.key, number: s.shooter.number, name: s.shooter.name, three: s.three, label: s.label, contest: +s.contest.toFixed(1), grade: s.shooter.byUser ? s.grade : null, pMake: +s.pMake.toFixed(2), release: s.release, buzzer: s.buzzer, greatContest: !!s.greatContest }
   }
 
   intentionalFoul(B, t) {
@@ -505,6 +575,11 @@ export class HoopsSim {
       return
     }
     if (left < 2.6) return this.forceShot(B, t)
+    // trapped: find the open man before the trap closes
+    if (B.trappedUntil > t && t - B.trappedAt > 0.35) {
+      const out = this.bestOption(B)
+      if (out && out.open > 2.5) return this.startPass(B, out.p, t)
+    }
     // scripted entry (post feed, floppy catch)
     if (!this.entryDone && B.key === this.set.handler && t >= this.set.entry.at) {
       this.entryDone = true
@@ -614,6 +689,13 @@ export class HoopsSim {
     const B = this.ball.state === 'held' ? this.ball.holder : null
     if (!B || B.team !== 'off' || t - this.lastHelpCheck < 0.1) return
     this.lastHelpCheck = t
+    if (B.trappedUntil > t && !B.gatherAt && this.rng() < 0.006) {
+      const trapper = this.defenders.find((x) => x.doubleUntil > t && x.doubleTarget === B) ?? B.defender
+      this.ball.holder = trapper
+      this.end(t, { kind: 'steal', by: trapper.number, byName: trapper.name, points: 0 }, `TRAPPED! ${who(trapper)} rips it away!`)
+      this.emit('steal')
+      return
+    }
     const d = distToHoop(B.pos)
     const own = B.defender
     const beaten = !own || own.screenedUntil > t || own.frozenUntil > t || distToHoop(own.pos) > d + 0.5
@@ -711,6 +793,11 @@ export class HoopsSim {
     let speed = d.speed
     if (shooter && t < (d.oneShotUntil ?? 0) && d.oneShot === 'Contest') {
       target = shooter.pos
+      if (d.closeUntil > t) speed += 1.5
+    } else if (d.doubleUntil > t && d.doubleTarget && b.holder === d.doubleTarget) {
+      const T = d.doubleTarget
+      target = tmp.copy(HOOP_V).sub(T.pos).setY(0).normalize().multiplyScalar(2).add(T.pos).setX(T.pos.x + (d.pos.x > T.pos.x ? 2 : -2))
+      speed += 1.5
     } else if (d.helpUntil > t && d.helpTarget && b.holder === d.helpTarget) {
       target = tmp.copy(HOOP_V).sub(d.helpTarget.pos).setY(0).normalize().multiplyScalar(3.5).add(d.helpTarget.pos)
       speed += 1

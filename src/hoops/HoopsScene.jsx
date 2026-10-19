@@ -7,6 +7,7 @@ import { FIXED_DT, RIM_HEIGHT } from './sim'
 import { HOOP } from './sets'
 import { hoopsUniform, numberStyle } from './teams'
 import { nbaLogoUrl } from '../game/real'
+import { Arena } from './Arena'
 
 // Units are feet. Half court: x -25..25, z 0 (baseline the offense attacks) .. 47 (half court).
 const COURT_W = 50
@@ -180,76 +181,6 @@ function Hoop({ netRef }) {
   )
 }
 
-/** Stands and fans around the court. The crowd bounces harder when something big happens. */
-function Arena({ home, away, excited }) {
-  const ref = useRef()
-  const seats = useMemo(() => {
-    const out = []
-    const colors = [home.jersey, home.trim, '#ffffff', home.jersey, '#2a2a2a', away.jersey]
-    let k = 0
-    // behind the baseline, and along both sidelines
-    for (let row = 0; row < 9; row++) {
-      for (let i = 0; i < 34; i++) out.push({ x: -33 + i * 2, y: 1.6 + row * 1.6, z: -12 - row * 2.2, c: colors[k++ % colors.length] })
-      for (const sx of [-1, 1]) for (let i = 0; i < 26; i++) out.push({ x: sx * (33 + row * 2.2), y: 1.6 + row * 1.6, z: -6 + i * 2.4, c: colors[k++ % colors.length] })
-    }
-    return out
-  }, [home, away])
-  const dummy = useMemo(() => new THREE.Object3D(), [])
-  const color = useMemo(() => new THREE.Color(), [])
-  useEffect(() => {
-    const m = ref.current
-    seats.forEach((s, i) => {
-      dummy.position.set(s.x, s.y, s.z)
-      dummy.updateMatrix()
-      m.setMatrixAt(i, dummy.matrix)
-      m.setColorAt(i, color.set(s.c))
-    })
-    m.instanceMatrix.needsUpdate = true
-    if (m.instanceColor) m.instanceColor.needsUpdate = true
-  }, [seats, dummy, color])
-  useFrame(({ clock }) => {
-    const m = ref.current
-    if (!m) return
-    const t = clock.elapsedTime
-    const amp = excited ? 0.55 : 0.06
-    for (let i = 0; i < seats.length; i += excited ? 1 : 3) {
-      const s = seats[i]
-      dummy.position.set(s.x, s.y + Math.abs(Math.sin(t * (excited ? 9 : 2) + i * 1.7)) * amp, s.z)
-      dummy.updateMatrix()
-      m.setMatrixAt(i, dummy.matrix)
-    }
-    m.instanceMatrix.needsUpdate = true
-  })
-  return (
-    <group>
-      <instancedMesh ref={ref} args={[null, null, seats.length]}>
-        <boxGeometry args={[1.3, 1.6, 1.1]} />
-        <meshLambertMaterial />
-      </instancedMesh>
-      {/* tiers */}
-      {Array.from({ length: 9 }, (_, row) => (
-        <group key={row}>
-          <mesh position={[0, row * 1.6 + 0.4, -12 - row * 2.2]}>
-            <boxGeometry args={[72, 0.8, 2.2]} />
-            <meshLambertMaterial color="#1d2028" />
-          </mesh>
-          {[-1, 1].map((sx) => (
-            <mesh key={sx} position={[sx * (33 + row * 2.2), row * 1.6 + 0.4, 24]}>
-              <boxGeometry args={[2.2, 0.8, 62]} />
-              <meshLambertMaterial color="#1d2028" />
-            </mesh>
-          ))}
-        </group>
-      ))}
-      {/* baseline LED board */}
-      <mesh position={[0, 1.4, -8.5]}>
-        <boxGeometry args={[56, 2.8, 0.4]} />
-        <meshBasicMaterial color={home.jersey} />
-      </mesh>
-    </group>
-  )
-}
-
 /** Open-man rings under your teammates (tap to pass), like the football read rings. */
 function PassRings({ sim, enabled, onPass }) {
   const refs = useRef([])
@@ -300,7 +231,7 @@ const ballHand = new THREE.Vector3()
  * Draws a HoopsSim: 10 players, the ball, the court. `version` rebuilds the characters (new teams/roster).
  * offense/defense: NBA team objects; offenseAway: the offense wears white.
  */
-export default function HoopsScene({ sim, version, offense, defense, offenseAway, home, onStatus, onEvent, controls = false, onPass }) {
+export default function HoopsScene({ sim, version, offense, defense, offenseAway, home, onStatus, onEvent, controls = false, onPass, tension = 0, board: boardHint = '' }) {
   const gltf = useGLTF(HOOPS_MODEL_URL)
   const { camera, size } = useThree()
   const ballRef = useRef()
@@ -309,6 +240,12 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
   const lastStatus = useRef('')
   const acc = useRef(0)
   const [excited, setExcited] = useState(false)
+  const [moment, setMoment] = useState('') // big-play LED message for a few seconds
+  const homeIsOffense = offense === home
+  const markerRef = useRef()
+  const lastBounce = useRef(1)
+  const lastSqueak = useRef(0)
+  const prevVel = useRef([])
 
   const actors = useMemo(
     () =>
@@ -329,6 +266,11 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
     acc.current = 0
     setExcited(false)
   }, [version, sim])
+  useEffect(() => {
+    if (!moment) return
+    const id = setTimeout(() => (setMoment(''), setExcited(false)), 3800)
+    return () => clearTimeout(id)
+  }, [moment])
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 20) * sim.timeScale
@@ -359,10 +301,34 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
         if (p.anim === 'Dribble' || p.anim === 'Run') {
           const bounce = Math.abs(Math.sin(sim.t * (p.anim === 'Run' ? 9 : 7)))
           ball.position.set(ballHand.x, 0.6 + (ballHand.y - 0.6) * bounce, ballHand.z)
+          // the ball hits the floor: thump
+          if (bounce < 0.12 && lastBounce.current >= 0.12 && sim.timeScale < 2) onEvent?.({ type: 'dribble', loud: sim.phase === 'live' })
+          lastBounce.current = bounce
         } else ball.position.copy(ballHand)
         b.pos.copy(ball.position)
       } else ball.position.copy(b.pos)
       ball.rotation.x += rawDt * (b.state === 'shot' ? -12 : 4)
+    }
+    // sneakers squeak on hard cuts
+    if (sim.phase === 'live' && sim.timeScale < 2) {
+      sim.players.forEach((p, i) => {
+        const pv = (prevVel.current[i] ??= new THREE.Vector3())
+        const turn = pv.distanceTo(p.vel) / Math.max(rawDt, 1 / 120)
+        if (turn > 70 && p.vel.length() > 7 && performance.now() - lastSqueak.current > 450) {
+          lastSqueak.current = performance.now()
+          onEvent?.({ type: 'squeak' })
+        }
+        pv.copy(p.vel)
+      })
+    }
+    // a marker over the ball handler you control
+    if (markerRef.current) {
+      const B = sim.ball.state === 'held' ? sim.ball.holder : null
+      markerRef.current.visible = !!(controls && B && B.team === 'off')
+      if (B) {
+        markerRef.current.position.set(B.pos.x, 9.6 + Math.sin(performance.now() / 180) * 0.25, B.pos.z)
+        markerRef.current.rotation.y += rawDt * 3
+      }
     }
     if (netRef.current) {
       const swish = b.state === 'swish' ? Math.max(0, 1 - (sim.t - b.t0) * 2) : 0
@@ -379,7 +345,16 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
     if (status !== lastStatus.current) {
       lastStatus.current = status
       onStatus?.({ phase: sim.phase, message: sim.message, result: sim.result })
-      setExcited(!!sim.result && (sim.result.points > 0 || sim.result.kind === 'steal'))
+      // the home crowd goes off for home buckets and home stops
+      const r = sim.result
+      if (r && sim.phase === 'dead') {
+        const homeScored = r.points > 0 && homeIsOffense
+        const homeStop = !homeIsOffense && ['miss', 'steal', 'shotclock', 'clock'].includes(r.kind)
+        if (homeScored || homeStop) {
+          setExcited(true)
+          setMoment(homeScored ? (r.points === 3 ? 'THREE' : 'BUCKET') : 'STOP')
+        }
+      }
     }
   })
 
@@ -392,7 +367,11 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
       <pointLight position={[0, 30, 10]} intensity={300} distance={90} />
       <Court home={home} />
       <Hoop netRef={netRef} />
-      <Arena home={home} away={home === offense ? defense : offense} excited={excited} />
+      <Arena home={home} away={home === offense ? defense : offense} excite={excited ? 1 : tension} board={moment || boardHint} />
+      <mesh ref={markerRef} visible={false}>
+        <octahedronGeometry args={[0.7, 0]} />
+        <meshBasicMaterial color="#ffd400" toneMapped={false} />
+      </mesh>
       {actors.map((a) => (
         <primitive key={a.root.uuid} object={a.root} />
       ))}

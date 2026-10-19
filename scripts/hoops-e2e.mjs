@@ -49,8 +49,17 @@ for (let i = 0; i < 24; i++) {
     if (i < 3) await shot(`defcall-${i}`)
     await page.evaluate((c) => { const b = [...document.querySelectorAll('.cov')].find((x) => x.textContent.toLowerCase().includes(c)); b?.click() }, covs[i % covs.length])
     await click('Lock it in')
-    await sleep(1500)
-    if (i < 3) await shot(`def-live-${i}`)
+    if (i % 2 === 1) {
+      // play defense: contest right as their shooter rises
+      const rising = await page.waitForSelector('.lc-hint.alert', { timeout: 12000 }).then(() => true, () => false)
+      if (rising) {
+        await shot(`contest-${i}`)
+        console.log(`  contested: ${await press('.lc-btn', 'Contest')}`)
+      }
+    } else {
+      await sleep(1500)
+      if (i < 3) await shot(`def-live-${i}`)
+    }
   } else if (stage === 'ft') {
     await shot(`ft-${i}`)
     for (let k = 0; k < 3; k++) {

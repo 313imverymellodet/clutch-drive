@@ -69,8 +69,8 @@ function Shell({ title, mode, children }) {
     <div className="app">
       <header className="top">
         <Link to="/" className="brand" aria-label={`${BRAND.name} home`}>
-          <Logo size={26} />
-          <span className="title">{BRAND.name.toUpperCase()}</span>
+          {mode?.startsWith('hoops') ? <span className="hoops-logo" aria-hidden="true">🏀</span> : <Logo size={26} />}
+          <span className="title">{mode?.startsWith('hoops') ? 'CLUTCH HOOPS' : BRAND.name.toUpperCase()}</span>
         </Link>
         <div className="top-right">
           <nav className="tabs">
