@@ -54,7 +54,7 @@ The basketball game: down late, your ball, one possession at a time both ways.
 - **AI:** their defense keys on the sets you keep calling and sometimes disguises its look. Their offense attacks the coverages you lean on, and runs out the clock when it leads.
 - **Engine:** `src/hoops/sim.js` is a fixed-step, seeded half-court sim like the football one (instant replay re-runs your taps). `node scripts/hoops-outcomes.mjs` plays every set against every coverage to tune it: currently about 0.96 points per possession, with clear strengths and weaknesses per set.
 - **Characters:** `blender/build_player.py -- --hoops` builds `public/models/hoops.glb`: no helmet, hair, tank top, shorts, plus Dribble, Shoot, Pass, Defend, Contest and Layup clips.
-- Daily (`/hoops`) is the same made-up scenario for everyone each day. Practice (`/hoops?mode=practice`) lets you pick any two teams. The win probability is an estimate for now. Real NBA endings and a fitted model from hoopR play-by-play are the next step, along with Survivor, Defense mode and head-to-head for hoops.
+- Daily (`/hoops`) is a real NBA ending (below), the same for everyone each day. Practice (`/hoops?mode=practice`) lets you pick any two teams in a made-up spot. Survivor, Defense mode and head-to-head for hoops are next.
 - `node scripts/hoops-e2e.mjs [outDir] [w] [h] [mode]` plays a whole game through the UI.
 
 ## Real moments and win probability
@@ -67,6 +67,17 @@ The basketball game: down late, your ball, one possession at a time both ways.
 The Daily walks through the moments in a fixed shuffle (no repeats for about 11 months). The live meter (`src/game/winprob.js`) updates after every snap and while the clock runs. The end screen shows the win-probability chart and "what really happened".
 
 Data credit (required by the CC BY 4.0 license): real game situations and the win-probability model come from [nflverse](https://github.com/nflverse/nflverse-data) play-by-play data. The credit appears on the landing page footer and the end-of-drive history card.
+
+### Hoops: real NBA endings and win probability
+
+`npm run data:hoops` (`node scripts/build-hoops-moments.mjs .data-cache/hoops 2022 2026`) downloads [sportsdataverse hoopR](https://github.com/sportsdataverse/hoopR) NBA play-by-play (ESPN-sourced, the `espn_nba_pbp` release that hoopR's `load_nba_pbp()` reads; about 270 MB of CSV per season, 2021-22 through 2025-26) and builds two files. Only team and situation columns are read (event type, team, score, clock, timeouts): **no player names or play descriptions.** Possession isn't a column, so it is inferred from event types (made shots, rebounds, turnovers, last free throws).
+
+- `src/data/hoopsMoments.json`: 1,969 real endings from 6,574 games, one per game: the first time a team down 1–5 has the ball with 0:25–1:30 left in the 4th. Each keeps the game id, season, date, home/away, teams (mapped to `src/hoops/teams.js` abbreviations), score, clock, both teams' timeouts left (7 per game, at most 4 in the 4th and 2 after the 3:00 mark), ESPN's win probability for the team with the ball, how that possession ended (three 253, two 533, free throws 270, empty 694, turnover 218, out of time 1) and the final score. The trailing team won 398 of them (20%).
+- `src/data/hoopsWpModel.json`: a logistic model (score margin, seconds left, possession, timeouts, home court, scaled by the clock) fit in plain JS on about 180,000 game states from the last 6:00 of real 4th quarters, holding out every 5th game. On 18,000 held-out states from 523 games where ESPN's own per-play numbers were fetched (ESPN's public game summary API, cached in `.data-cache/hoops/espn-wp`), its log loss is **0.257 vs. 0.256 for ESPN**; in one-possession games in the last 1:30 it's **0.357 vs. 0.381**. Both are calibrated about the same. ESPN also folds in the pregame betting line, so at a given moment the two can differ (on average by about 6 points at the moment starts).
+
+The Daily walks through the moments in a fixed shuffle (`src/hoops/moments.js`, no repeats for over five years). `winProb()` in `src/hoops/game.js` evaluates the model live. The end screen shows "what really happened" with the data credit.
+
+Data credit: real game situations and the hoops win-probability model come from sportsdataverse hoopR NBA play-by-play (ESPN data). The credit appears on the hoops end-of-game card.
 
 ## Real branding
 
