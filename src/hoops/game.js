@@ -145,7 +145,7 @@ export function startPossession(g, { timeout = false } = {}) {
     next.ato = true
   }
   // with the clock nearly gone they push it up and still get a last heave (about 1.5s)
-  const burn = g.clock > 2.2 ? Math.min(next.inbound, g.clock - 1.5) : next.inbound
+  const burn = g.clock > 2.2 ? Math.min(next.inbound, g.clock - 1.5) : g.clock > 0.8 ? Math.min(next.inbound, g.clock - 0.6) : next.inbound
   next.clock = Math.max(0, g.clock - burn)
   next.inbound = 0
   if (next.clock <= 0) return finish(next, 'Time ran out bringing it up the floor.')
@@ -206,11 +206,11 @@ function withWp(g) {
 
 function finish(g, reason = null) {
   const diff = g.scoreYou - g.scoreThem
-  if (diff === 0 && g.ot < 1) {
+  if (diff === 0 && g.ot < 3) {
     // tied at the horn: a short overtime, jump ball goes your way half the time
-    return { ...g, ot: g.ot + 1, clock: 45, poss: rngFrom(`${g.id}|ot`)() < 0.5 ? 'you' : 'them', shotClock: 24, inbound: 0, reason: 'Tied at the horn. Overtime!' }
+    return { ...g, ot: g.ot + 1, clock: 45, poss: rngFrom(`${g.id}|ot${g.ot}`)() < 0.5 ? 'you' : 'them', shotClock: 24, inbound: 0, reason: g.ot ? 'Still tied. Another overtime!' : 'Tied at the horn. Overtime!' }
   }
-  return { ...g, clock: 0, status: diff > 0 ? 'won' : 'lost', reason: reason ?? (diff > 0 ? 'You closed it out!' : diff === 0 ? 'Tied after overtime. Call it a draw (a loss).' : 'Came up short.') }
+  return { ...g, clock: 0, status: diff > 0 ? 'won' : 'lost', reason: diff === 0 ? 'Still tied after three overtimes. Call it a draw.' : reason ?? (diff > 0 ? 'You closed it out!' : 'Came up short.') }
 }
 
 export const fmtClock = (s) => {
