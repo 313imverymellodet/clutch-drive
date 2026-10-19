@@ -3,47 +3,19 @@ import { Canvas } from '@react-three/fiber'
 import { HoopsSim } from '../hoops/sim'
 import { COVERAGES, SETS } from '../hoops/sets'
 import { NBA_BY_ABBR } from '../hoops/teams'
-import { aiCoverage, aiSet, aiWillFoul, applyFoul, applyPossession, fmtClock, makeScenario, newGame, possRng, possSeed, shareText, startPossession, winProb } from '../hoops/game'
-import { CoveragePicker, FreeThrows, HoopsBug, HoopsControls, NbaTeamSelect, PossessionStrip, SetPicker, hoopsHeadline } from '../hoops/HoopsUI'
+import { aiCoverage, aiSet, aiWillFoul, applyFoul, applyPossession, boostsFor, fmtClock, makeScenario, newGame, possRng, possSeed, shareText, startPossession, winProb } from '../hoops/game'
+import { hoopsSound, hsfx, setChant } from '../hoops/sound'
+import { CoveragePicker, FreeThrows, HoopsBug, HoopsControls, NbaTeamSelect, SetPicker, hoopsHeadline } from '../hoops/HoopsUI'
 import { ShareButton, WPChart, WinProbMeter } from '../ui/GameUI'
 import { TeamLogo } from '../game/real'
 import { dayNumber, todayKey } from '../game/drive'
 import { load, save } from '../game/storage'
-import { sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
+import { preloadHoops, setAmbienceLevel, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 
 const HoopsScene = lazy(() => import('../hoops/HoopsScene'))
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 const meterTeam = (t) => ({ endzone: t.jersey, stripe: t.trim })
-
-/** Sounds for hoops events; the crowd is on your side. */
-function hoopsSound(e, youOffense) {
-  switch (e.type) {
-    case 'start':
-      return sfx.whistle(0.2)
-    case 'pass':
-      return sfx.click()
-    case 'catch':
-      return sfx.catch()
-    case 'shot':
-      return sfx.throw()
-    case 'make':
-    case 'three':
-      return youOffense ? sfx.cheer(e.type === 'three' ? 1.6 : 1) : sfx.groan()
-    case 'rim':
-      sfx.hit()
-      return youOffense ? sfx.groan() : sfx.cheer(0.8)
-    case 'steal':
-      sfx.whistle(0.3)
-      return youOffense ? sfx.groan() : sfx.cheer(1)
-    case 'buzzer':
-    case 'whistle':
-      return sfx.whistle(0.5)
-    case 'move':
-      return sfx.cheer(0.4)
-    default:
-  }
-}
 
 export default function Hoops({ mode: rawMode }) {
   const mode = rawMode === 'practice' ? 'practice' : 'daily'
@@ -118,18 +90,25 @@ export default function Hoops({ mode: rawMode }) {
 
   const tipOff = () => {
     unlock()
-    startAmbience()
-    sfx.cadence?.()
+    startAmbience('hoops-crowd')
+    hsfx.whistle()
     begin(g)
   }
-  useEffect(() => () => stopAmbience(), [])
+  useEffect(() => {
+    preloadHoops()
+    return () => {
+      stopAmbience()
+      setChant(false)
+      setAmbienceLevel(0.32)
+    }
+  }, [])
 
   const runSet = (setId) => {
     const start = startPossession(g, { timeout: timeoutOn && g.inbound > 0 })
     if (start.status !== 'playing') return (setG(start), setStage('over'))
     setG(start)
     sim.timeScale = 1
-    sim.reset({ set: setId, seed: possSeed(start, setId), coverage: ctx.coverage, shotClock: start.shotClock, gameClock: start.clock, user: true })
+    sim.reset({ set: setId, seed: possSeed(start, setId), coverage: ctx.coverage, shotClock: start.shotClock, gameClock: start.clock, user: true, boosts: boostsFor(start, 'you') })
     sim.start()
     applied.current = null
     setCtx({ ...ctx, set: setId, start })
@@ -144,7 +123,7 @@ export default function Hoops({ mode: rawMode }) {
     setG(start)
     const { set, flip, milk } = ctx.ai
     sim.timeScale = 1
-    sim.reset({ set, flip, milk, seed: possSeed(start, `${set}|${call}`), coverage: { call, shown: call }, shotClock: start.shotClock, gameClock: start.clock, user: false })
+    sim.reset({ set, flip, milk, seed: possSeed(start, `${set}|${call}`), coverage: { call, shown: call }, shotClock: start.shotClock, gameClock: start.clock, user: false, userDef: true, boosts: boostsFor(start, 'them') })
     sim.start()
     applied.current = null
     setCtx({ ...ctx, set, coverage: call, start })
@@ -158,7 +137,7 @@ export default function Hoops({ mode: rawMode }) {
     const start = startPossession(g)
     if (start.status !== 'playing') return (setG(start), setStage('over'))
     const next = applyFoul(start, 'them', null)
-    sfx.whistle(0.4)
+    hsfx.whistle()
     const last = next.log.at(-1)
     setLastPoss({ team: 'them', result: { kind: 'ft', points: last.points, fts: 2 }, message: `You foul. They make ${last.ftPoints} of 2.`, offReb: false })
     setG(next)
@@ -182,7 +161,9 @@ export default function Hoops({ mode: rawMode }) {
         }
         setG((cur) => {
           const next = applyPossession(ctx.start ?? cur, ctx.team, r, { set: ctx.set, coverage: ctx.coverage })
-          setLastPoss({ team: ctx.team, result: r, message: s.message, offReb: !!next.log.at(-1)?.offReb })
+          const last = next.log.at(-1)
+          const hot = last?.heatingUp ? ` 🔥 ${r.shot?.name ?? `#${r.shot?.number}`} is heating up!` : ''
+          setLastPoss({ team: ctx.team, result: r, message: s.message + hot, quality: shotQuality(r), offReb: !!last?.offReb })
           return next
         })
         setStage('result')
@@ -195,6 +176,7 @@ export default function Hoops({ mode: rawMode }) {
     const base = ctx.start ?? g
     const next = ctx.foul ? applyFoul(base, 'you', made) : applyPossession(base, 'you', ctx.pending, { set: ctx.set, ftMade: made })
     const fts = ctx.foul ? 2 : ctx.pending.fts
+    if (made) hsfx.roar(made === fts ? 0.7 : 0.4)
     setLastPoss({ team: 'you', result: { ...(ctx.pending ?? { kind: 'ft' }), points: next.log.at(-1).points }, message: `${ctx.foul ? 'They foul to stop the clock. ' : ''}You make ${made} of ${fts}.`, offReb: !!next.log.at(-1)?.offReb })
     setG(next)
     setStage('result')
@@ -232,7 +214,9 @@ export default function Hoops({ mode: rawMode }) {
     if (stage !== 'over' || g.status === 'playing' || finished.current === g.id) return
     finished.current = g.id
     if (mode === 'daily' && !load(`cd.hoops.${dateKey}`, null)) save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: `${SITE}/hoops`, mode }), grid: g.log.map((p) => p.emoji).join('') })
-    if (g.status === 'won') sfx.theme?.()
+    setChant(false)
+    hsfx.horn()
+    if (g.status === 'won') setTimeout(() => hsfx.theme(), 1600)
   }, [stage, g, mode, dateKey, day])
 
   const newPractice = (teams = {}) => {
@@ -250,7 +234,16 @@ export default function Hoops({ mode: rawMode }) {
   const shotClock = live && !replaying ? Math.max(0, sim.shotClock - sim.t) : g.shotClock
   const clockShown = live && !replaying ? Math.max(0, (ctx?.start?.clock ?? g.clock) - sim.t) : g.clock
   const h = stage === 'result' ? hoopsHeadline(lastPoss?.team, lastPoss?.result, lastPoss?.offReb) : null
+  const homeOnDefense = (youOffense ? them : you) === home
+  const tense = g.status === 'playing' && g.clock <= 40 && Math.abs(g.scoreYou - g.scoreThem) <= 4
+  const tension = stage === 'intro' || stage === 'over' ? 0.04 : tense ? 0.26 : 0.1
   void simKey
+
+  // the building gets louder late in a close game; the home crowd chants when its team is defending
+  useEffect(() => {
+    setAmbienceLevel(stage === 'over' ? 0.2 : tense ? 0.5 : 0.32)
+    setChant(homeOnDefense && tense && (stage === 'live' || stage === 'defcall' || stage === 'call') && !replaying)
+  }, [stage, tense, homeOnDefense, replaying])
 
   return (
     <main className="game hoops">
@@ -264,7 +257,9 @@ export default function Hoops({ mode: rawMode }) {
             offenseAway={offense !== home}
             home={home}
             onStatus={onStatus}
-            onEvent={(e) => hoopsSound(e, youOffense)}
+            onEvent={(e) => hoopsSound(e, { youOffense, youHome: scenario.youHome })}
+            tension={tension}
+            board={homeOnDefense && (stage === 'live' || stage === 'call' || stage === 'defcall') && tense ? 'DEFENSE' : ''}
             controls={live && !replaying && youOffense}
             onPass={(key) => sim.input({ type: 'pass', key })}
           />
@@ -274,7 +269,6 @@ export default function Hoops({ mode: rawMode }) {
       <div className="hud-top">
         <HoopsBug g={{ ...g, clock: clockShown }} you={you} them={them} shotClock={stage === 'live' || stage === 'call' || stage === 'defcall' ? shotClock : null} />
         <WinProbMeter p={stage === 'result' || stage === 'over' ? trail.at(-1) ?? g.wp0 : winProb(g, clockShown)} last={stage === 'result' && trail.length > 1 ? trail.at(-2) : null} team={meterTeam(you)} />
-        <PossessionStrip log={g.log} />
         {replaying && <div className="replay-badge">REPLAY</div>}
       </div>
 
@@ -282,6 +276,7 @@ export default function Hoops({ mode: rawMode }) {
         <div className={`banner ${h?.tone ?? 'ok'}`} key={`${g.log.length}-${status.message}`}>
           {h && <div className="banner-big">{h.big}</div>}
           <div className="banner-sub">{stage === 'result' ? lastPoss?.message : status.message}</div>
+          {stage === 'result' && lastPoss?.quality && <div className="banner-quality">{lastPoss.quality}</div>}
         </div>
       )}
 
@@ -320,12 +315,13 @@ export default function Hoops({ mode: rawMode }) {
             timeoutOn={timeoutOn}
             setTimeoutOn={setTimeoutOn}
             scout={scoutLine(g)}
+            hot={boostsFor(g, 'you')}
           />
         )}
-        {stage === 'defcall' && <CoveragePicker onLock={lockCoverage} onFoul={foulNow} canFoul={g.scoreYou < g.scoreThem && g.clock < 40} tip={defTip(g)} />}
+        {stage === 'defcall' && <CoveragePicker onLock={lockCoverage} onFoul={foulNow} canFoul={g.scoreYou < g.scoreThem && g.clock < 40} tip={defTip(g)} theirSets={g.theirSets ?? []} />}
         {stage === 'ft' && ctx && <FreeThrows n={ctx.foul ? 2 : ctx.pending?.fts ?? 2} rng={possRng(g, 'ft')} onDone={ftDone} title={ctx.foul ? 'They foul you. Ice it!' : 'Free throws'} />}
 
-        {live && !replaying && status.phase === 'live' && <HoopsControls sim={sim} />}
+        {live && !replaying && status.phase === 'live' && <HoopsControls sim={sim} firstTime={g.log.length < 2} />}
         {live && status.phase === 'live' && sim.timeScale < 2 && (
           <button className="btn small skip" onClick={skip}>Skip ⏩</button>
         )}
@@ -343,6 +339,14 @@ export default function Hoops({ mode: rawMode }) {
       {stage === 'over' && <HoopsOver g={saved && g.status === 'playing' ? null : g} saved={saved} mode={mode} day={day} onAgain={() => (mode === 'daily' ? navigate('/hoops?mode=practice') : newPractice())} />}
     </main>
   )
+}
+
+/** "Contested three · 31% shot": what kind of look that was. */
+function shotQuality(r) {
+  const s = r?.shot
+  if (!s) return null
+  const look = s.contest < 2 ? 'Smothered' : s.contest < 4 ? 'Contested' : s.contest < 7 ? 'Decent look:' : 'Wide open'
+  return `${look} ${s.label} · ${Math.round(s.pMake * 100)}% shot${s.grade ? ` · ${s.grade} release` : ''}`
 }
 
 function scoutLine(g) {

@@ -1,13 +1,14 @@
 // Turns the raw Viewmax (Everygen) sound generations into web-ready clips in public/sounds.
 //
-//   node scripts/make-sounds.mjs <dirWithMp3s>
+//   node scripts/make-sounds.mjs <dirWithMp3s> [set=nfl|hoops]
 //
-// Expects crowd, roar, groan, cheer, hit, cadence and theme .mp3 files. macOS only: uses afconvert to
+// nfl expects crowd, roar, groan, cheer, hit, cadence and theme .mp3 files; hoops expects crowd, roar, ooh,
+// chant, swish, clank, dribble, squeak, horn, whistle and theme (written as hoops-*.m4a). macOS only: uses afconvert to
 // decode and to encode AAC. Trims silence, normalizes, fades tails, and makes the crowd bed loop seamlessly.
 import { execFileSync } from 'node:child_process'
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 
-const [dir] = process.argv.slice(2)
+const [dir, SET = 'nfl'] = process.argv.slice(2)
 if (!dir) {
   console.error('usage: node scripts/make-sounds.mjs <dirWithMp3s>')
   process.exit(1)
@@ -73,6 +74,9 @@ function fades(s, inMs = 4, outMs = 150) {
   for (let i = 0; i < z; i++) s[s.length - 1 - i] *= i / z
   return s
 }
+/** Keep just the first `ms` of a clip (one bounce, one clank), with a quick fade-out. */
+const head = (s, ms, fadeMs = 60) => fades(s.slice(0, Math.min(s.length, Math.round((ms / 1000) * RATE))), 1, fadeMs)
+
 function seamlessLoop(s, fadeSec = 2) {
   const F = Math.round(fadeSec * RATE)
   const out = s.slice(F)
@@ -85,7 +89,7 @@ function seamlessLoop(s, fadeSec = 2) {
   return out
 }
 
-const JOBS = {
+const NFL = {
   crowd: (s) => normalize(seamlessLoop(s.slice(Math.round(0.5 * RATE), s.length - Math.round(0.5 * RATE))), -3),
   roar: (s) => fades(normalize(trim(s)), 4, 1500),
   groan: (s) => fades(normalize(trim(s)), 4, 800),
@@ -95,13 +99,29 @@ const JOBS = {
   theme: (s) => fades(normalize(trim(s)), 20, 1200),
 }
 
+const HOOPS = {
+  crowd: (s) => normalize(seamlessLoop(s.slice(Math.round(0.5 * RATE), s.length - Math.round(0.5 * RATE))), -3),
+  roar: (s) => fades(normalize(trim(s)), 4, 1500),
+  ooh: (s) => fades(normalize(trim(s)), 4, 700),
+  chant: (s) => normalize(seamlessLoop(trim(s), 0.8), -2),
+  swish: (s) => normalize(head(trim(s, -40, 2), 1100, 300)),
+  clank: (s) => normalize(head(trim(s, -36, 1), 900, 250)),
+  dribble: (s) => normalize(head(trim(s, -34, 1), 380, 90)),
+  squeak: (s) => normalize(head(trim(s, -38, 2), 1300, 150)),
+  horn: (s) => fades(normalize(head(trim(s), 2600, 300)), 4, 300),
+  whistle: (s) => normalize(head(trim(s, -36, 2), 900, 120)),
+  theme: (s) => fades(normalize(trim(s)), 20, 1200),
+}
+const JOBS = SET === 'hoops' ? HOOPS : NFL
+const prefix = SET === 'hoops' ? 'hoops-' : ''
+
 for (const [name, job] of Object.entries(JOBS)) {
   const tmp = `${dir}/${name}.dec.wav`
   execFileSync('afconvert', ['-f', 'WAVE', '-d', `LEI16@${RATE}`, '-c', '1', `${dir}/${name}.mp3`, tmp])
   const s = job(readWav(tmp))
   const wav = `${dir}/${name}.out.wav`
   writeWav(wav, s)
-  const out = `${OUT}/${name}.m4a`
+  const out = `${OUT}/${prefix}${name}.m4a`
   execFileSync('afconvert', ['-f', 'm4af', '-d', 'aac', '-b', name === 'theme' ? '96000' : '64000', wav, out])
   console.log(`${name}: ${(s.length / RATE).toFixed(2)}s -> ${out} (${readFileSync(out).length} bytes)`)
 }

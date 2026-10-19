@@ -579,3 +579,15 @@ a { color: inherit; }
   .lc-reads.four .lc-name { font-size: 11px; }
   .to-toggle { font-size: 11px; padding: 6px; }
 }
+
+/* v9: hoops polish */
+.hoops-logo { font-size: 22px; line-height: 1; }
+.set-card.good { border-color: #1f9d55; }
+.good-mark { position: absolute; top: 3px; right: 6px; font-size: 12px; font-weight: 900; color: #1f9d55; }
+.hot-line { background: #fff1e0; }
+.def-help { margin: 6px 0 2px; }
+.banner-quality { display: inline-block; margin-top: 6px; padding: 3px 10px; border-radius: 999px; background: rgba(15,17,23,0.82); color: #fff; font-size: 12px; font-weight: 800; letter-spacing: 0.02em; }
+.lc-hint.alert { color: #ffd400; font-size: 14px; animation: lc-pulse 0.4s ease-in-out infinite alternate; }
+.lc-btn.pulse { animation: lc-pulse 0.3s ease-in-out infinite alternate; box-shadow: 0 0 0 4px rgba(255,212,0,0.6); }
+@keyframes lc-pulse { from { transform: scale(1); } to { transform: scale(1.04); } }
+.bug-strip { font-size: 11px; letter-spacing: -1px; margin-left: auto; margin-right: 8px; }

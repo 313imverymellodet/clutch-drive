@@ -60,6 +60,8 @@ export function newGame(sc) {
     log: [],
     yourSets: [],
     yourCoverages: [],
+    theirSets: [],
+    heat: { you: {}, them: {} }, // makes in a row by position: two straight and he's heating up
   }
   g.wp0 = winProb(g)
   return g
@@ -173,6 +175,13 @@ export function applyPossession(g, team, result, { set, coverage, ftMade = null 
   const entry = { team, set, coverage, kind: result.kind, points, fts, ftPoints, shot: result.shot ?? null, clock: next.clock, emoji: emojiFor(team, { ...result, points }) }
   if (team === 'you' && set) next.yourSets = [...g.yourSets, set]
   if (team === 'them' && coverage) next.yourCoverages = [...g.yourCoverages, coverage]
+  if (team === 'them' && set) next.theirSets = [...(g.theirSets ?? []), set]
+  if (result.shot?.by) {
+    const h = { ...(g.heat?.[team] ?? {}) }
+    h[result.shot.by] = result.points > 0 && ['make', 'and1'].includes(result.kind) ? (h[result.shot.by] ?? 0) + 1 : 0
+    next.heat = { ...(g.heat ?? { you: {}, them: {} }), [team]: h }
+    entry.heatingUp = h[result.shot.by] === 2 ? result.shot.by : null
+  }
 
   // who has it next
   const other = team === 'you' ? 'them' : 'you'
@@ -194,6 +203,13 @@ export function applyPossession(g, team, result, { set, coverage, ftMade = null 
   return withWp(next)
 }
 
+/** Hot hands for a team's next possession: two straight makes +0.04, three or more +0.07. */
+export function boostsFor(g, team) {
+  const out = {}
+  for (const [k, n] of Object.entries(g.heat?.[team] ?? {})) if (n >= 2) out[k] = n >= 3 ? 0.07 : 0.04
+  return Object.keys(out).length ? out : null
+}
+
 /** Intentional foul by the trailing team: about a second off, then two free throws. */
 export function applyFoul(g, shooter, made) {
   return applyPossession(g, shooter, { kind: 'ft', points: 0, fts: 2, elapsed: 1.2 }, { ftMade: shooter === 'you' ? made : null, set: null })
@@ -210,7 +226,7 @@ function finish(g, reason = null) {
     // tied at the horn: a short overtime, jump ball goes your way half the time
     return { ...g, ot: g.ot + 1, clock: 45, poss: rngFrom(`${g.id}|ot${g.ot}`)() < 0.5 ? 'you' : 'them', shotClock: 24, inbound: 0, reason: g.ot ? 'Still tied. Another overtime!' : 'Tied at the horn. Overtime!' }
   }
-  return { ...g, clock: 0, status: diff > 0 ? 'won' : 'lost', reason: diff === 0 ? 'Still tied after three overtimes. Call it a draw.' : reason ?? (diff > 0 ? 'You closed it out!' : 'Came up short.') }
+  return { ...g, clock: 0, status: diff > 0 ? 'won' : 'lost', reason: diff === 0 ? 'Still tied after three overtimes. Call it a draw.' : diff > 0 ? 'You closed it out!' : reason ?? 'Came up short.' }
 }
 
 export const fmtClock = (s) => {

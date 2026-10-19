@@ -52,31 +52,47 @@ const ready = () => !!ctx && ctx.state === 'running'
 // Recorded clips generated with Viewmax (scripts/make-sounds.mjs). Each falls back to the synth if it can't load.
 // The bytes download as soon as the game loads (no gesture needed); they're decoded once audio is unlocked,
 // so the first "Take the field" already has the QB's cadence ready.
+// Basketball has its own set (hoops-*.m4a), fetched only when a hoops page asks for it (preloadHoops).
 const CLIPS = ['crowd', 'roar', 'groan', 'cheer', 'hit', 'cadence', 'theme']
+export const HOOPS_CLIPS = ['crowd', 'roar', 'ooh', 'chant', 'swish', 'clank', 'dribble', 'squeak', 'horn', 'whistle', 'theme'].map((n) => `hoops-${n}`)
 const buffers = {}
-const bytes = typeof window === 'undefined' ? {} : Object.fromEntries(CLIPS.map((name) => [name, fetch(`/sounds/${name}.m4a`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status)))]))
+const bytes = {}
+const decoding = new Set()
+const fetchClip = (name) => (bytes[name] ??= fetch(`/sounds/${name}.m4a`).then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(r.status))))
+if (typeof window !== 'undefined') CLIPS.forEach(fetchClip)
 const pending = []
 function loadClips() {
-  for (const name of CLIPS) {
+  if (!ctx) return
+  for (const name of Object.keys(bytes)) {
+    if (decoding.has(name)) continue
+    decoding.add(name)
     bytes[name]
-      ?.then((b) => ctx.decodeAudioData(b.slice(0)))
+      .then((b) => ctx.decodeAudioData(b.slice(0)))
       .then((buf) => {
         buffers[name] = buf
-        if (name === 'crowd' && ambience?.synth) restartAmbience()
+        if (name === ambienceBed && ambience?.synth) restartAmbience()
         flushPending()
       })
       .catch(() => {})
   }
 }
+/** Start downloading the basketball sounds (decoded on the first tap, like the rest). */
+export function preloadHoops() {
+  if (typeof window === 'undefined') return
+  HOOPS_CLIPS.forEach(fetchClip)
+  loadClips()
+}
 /** Play clips that were asked for while audio was still starting up or decoding (if it's still within a beat). */
 let wantAmbience = false
+let ambienceBed = 'crowd'
+let ambienceLevel = 0.32
 function flushPending() {
   if (!ready()) return
   if (wantAmbience && !ambience) startAmbience()
   const keep = []
   for (const job of pending.splice(0)) {
     if (performance.now() - job.at > 1500) continue
-    if (buffers[job.name]) clip(job.name, job.gain)
+    if (buffers[job.name]) clip(job.name, job.gain, job.opts)
     else keep.push(job)
   }
   pending.push(...keep)
@@ -99,11 +115,35 @@ function unmuteIOS() {
     /* not supported */
   }
 }
+/** Play a recorded clip by name (see CLIPS / HOOPS_CLIPS). Returns false if it isn't ready yet. */
+export function playClip(name, gain = 1, opts = {}) {
+  return clip(name, gain, opts)
+}
+
+/** Loop a clip (the arena chant) with a fade in; returns a stop() that fades it out. */
+export function loopClip(name, gain = 0.5, fade = 0.6) {
+  if (!ready() || !buffers[name]) return null
+  const src = ctx.createBufferSource()
+  src.buffer = buffers[name]
+  src.loop = true
+  const g = ctx.createGain()
+  g.gain.value = 0
+  g.gain.setTargetAtTime(gain, ctx.currentTime, fade / 3)
+  src.connect(g).connect(master)
+  src.start()
+  return {
+    stop() {
+      g.gain.setTargetAtTime(0, ctx.currentTime, 0.25)
+      setTimeout(() => src.stop(), 1200)
+    },
+  }
+}
+
 function clip(name, gain = 1, { rate = 1, wait = false } = {}) {
   if (!ctx) return false
   if (!ready() || !buffers[name]) {
     // audio still starting or the clip still decoding: play it the moment it's ready (if that's within a beat)
-    if (wait) pending.push({ name, gain, at: performance.now() })
+    if (wait) pending.push({ name, gain, opts: { rate }, at: performance.now() })
     return false
   }
   const src = ctx.createBufferSource()
@@ -231,18 +271,20 @@ export const sfx = {
 }
 
 /** Low stadium murmur while a game is on screen. */
-export function startAmbience() {
+export function startAmbience(bed = ambienceBed) {
   wantAmbience = true
+  if (bed !== ambienceBed && ambience) stopAmbience(), (wantAmbience = true)
+  ambienceBed = bed
   if (!ready() || ambience) return
-  if (buffers.crowd) {
+  if (buffers[bed]) {
     const src = ctx.createBufferSource()
-    src.buffer = buffers.crowd
+    src.buffer = buffers[bed]
     src.loop = true
     const g = ctx.createGain()
     g.gain.value = 0
-    g.gain.setTargetAtTime(0.32, ctx.currentTime, 1)
+    g.gain.setTargetAtTime(ambienceLevel, ctx.currentTime, 1)
     src.connect(g).connect(master)
-    src.start(0, Math.random() * buffers.crowd.duration)
+    src.start(0, Math.random() * buffers[bed].duration)
     ambience = { src, g }
     return
   }
@@ -259,6 +301,12 @@ export function startAmbience() {
   src.connect(f).connect(g).connect(master)
   src.start()
   ambience = { src, g, synth: true }
+}
+
+/** Crowd volume: louder when the game is tight and late (0.32 is the normal murmur). */
+export function setAmbienceLevel(level) {
+  ambienceLevel = level
+  if (ambience && !ambience.synth && ctx) ambience.g.gain.setTargetAtTime(level, ctx.currentTime, 0.8)
 }
 
 /** Swap the synth murmur for the recorded crowd once it has loaded. */

@@ -40,6 +40,7 @@ export function HoopsBug({ g, you, them, shotClock = null }) {
       </div>
       <div className="bug-sub">
         <span>{g.poss === 'you' ? 'Your ball' : 'Their ball'}{g.inbound > 0 ? ' · backcourt' : ' · frontcourt'}</span>
+        {g.log.length > 0 && <span className="bug-strip" aria-label="Possessions so far">{g.log.slice(-8).map((p) => p.emoji).join('')}</span>}
         <span className="bug-tos" aria-label={`${g.timeouts} timeouts left`}>
           {[0, 1].map((i) => (
             <i key={i} className={i < g.timeouts ? 'on' : ''} />
@@ -96,7 +97,7 @@ export function SetDiagram({ id, className = 'set-icon' }) {
   )
 }
 
-export function SetPicker({ onCall, shown, canTimeout, timeoutOn, setTimeoutOn, scout }) {
+export function SetPicker({ onCall, shown, canTimeout, timeoutOn, setTimeoutOn, scout, hot = null }) {
   const [sel, setSel] = useState(null)
   useEffect(() => {
     const onKey = (e) => {
@@ -115,10 +116,12 @@ export function SetPicker({ onCall, shown, canTimeout, timeoutOn, setTimeoutOn, 
         <span className="look-chip">They’re showing: <b>{COVERAGES[shown]?.short}</b></span>
       </div>
       {scout && <div className="scout-line">🧢 {scout}</div>}
+      {hot && <div className="scout-line hot-line">🔥 Heating up: {Object.keys(hot).join(', ')}. Get him the ball.</div>}
       <div className="set-cards">
         {SET_IDS.map((id, i) => (
-          <button key={id} className={`set-card${sel === id ? ' on' : ''}`} onClick={() => (sel === id ? onCall(id) : setSel(id))}>
+          <button key={id} className={`set-card${sel === id ? ' on' : ''}${BEATS[id].includes(shown) ? ' good' : ''}`} onClick={() => (sel === id ? onCall(id) : setSel(id))}>
             <span className="kbd" aria-hidden="true">{i + 1}</span>
+            {BEATS[id].includes(shown) && <span className="good-mark" title={`Good against ${COVERAGES[shown].short} (if that's really what they're in)`}>✓</span>}
             <SetDiagram id={id} />
             <strong>{SETS[id].label}</strong>
             <span className="tag green">Beats {BEATS[id].map((c) => COVERAGES[c].short).join(' / ')}</span>
@@ -141,22 +144,29 @@ export function SetPicker({ onCall, shown, canTimeout, timeoutOn, setTimeoutOn, 
   )
 }
 
-export function CoveragePicker({ onLock, onFoul, canFoul, tip }) {
+export function CoveragePicker({ onLock, onFoul, canFoul, tip, theirSets = [] }) {
   const [call, setCall] = useState('man')
+  // scouting: the set they've run most, and which coverages it hurts
+  const counts = {}
+  for (const id of theirSets) counts[id] = (counts[id] ?? 0) + 1
+  const fav = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]
+  const favSet = fav && fav[1] >= 2 ? fav[0] : null
   return (
     <div className="sheet hsheet defpick">
       <div className="sheet-head">
         <span className="sheet-title">Get a stop</span>
       </div>
       {tip && <div className="scout-line">🧢 {tip}</div>}
+      {favSet && <div className="scout-line">📋 They keep running {SETS[favSet].label} ({fav[1]}×). It hurts {BEATS[favSet].map((c) => COVERAGES[c].short).join(' and ')}.</div>}
       <div className="covs">
         {COVERAGE_IDS.map((c) => (
           <button key={c} className={`cov${call === c ? ' on' : ''}`} onClick={() => setCall(c)}>
-            <strong>{COVERAGES[c].name}</strong>
+            <strong>{COVERAGES[c].name}{favSet && BEATS[favSet].includes(c) ? ' ⚠️' : ''}</strong>
             <span>{COVERAGES[c].blurb}</span>
           </button>
         ))}
       </div>
+      <p className="fine def-help">During their play: <b>Contest</b> (C) right as the shooter rises, <b>Double</b> (X) to trap the ball, <b>Foul</b> (F) to stop the clock.</p>
       <div className="call-row">
         {canFoul && (
           <button className="btn danger" onClick={onFoul} title="Stop the clock: they shoot two free throws">
@@ -174,7 +184,7 @@ export function CoveragePicker({ onLock, onFoul, canFoul, tip }) {
  * Your possession, live: pass (buttons, rings, 1-4), shoot (tap to rise, tap again at the top to release),
  * drive (D), stepback (S). Do nothing and your guys run the set themselves.
  */
-export function HoopsControls({ sim, onFoul }) {
+export function HoopsControls({ sim, onFoul, firstTime = false }) {
   const [c, setC] = useState(null)
   useEffect(() => {
     const id = setInterval(() => setC(sim.controls()), 60)
@@ -197,6 +207,8 @@ export function HoopsControls({ sim, onFoul }) {
       const k = e.key.toLowerCase()
       if (now.mode === 'defense') {
         if (k === 'f') (onFoul ? onFoul() : send({ type: 'foul' }))
+        else if (k === 'c' || k === ' ') send({ type: 'contest' })
+        else if (k === 'x') send({ type: 'double' })
         else return
       } else if (k === ' ' || k === 'enter') shoot()
       else if (now.mode === 'offense' && /^[1-4]$/.test(k)) send({ type: 'pass', key: now.mates[+k - 1].key })
@@ -212,8 +224,12 @@ export function HoopsControls({ sim, onFoul }) {
   if (c.mode === 'defense') {
     return (
       <div className="live-controls" role="group" aria-label="Defense controls">
-        <div className="lc-hint">They’re running their set. Down late? Foul to stop the clock.</div>
+        <div className={`lc-hint${c.shooting ? ' alert' : ''}`}>
+          {c.shooting ? 'HE’S RISING. CONTEST NOW!' : c.trapped ? 'Trapped! Watch the open man.' : 'Contest when he rises. Too early and he blows by you.'}
+        </div>
         <div className="lc-row">
+          <button className={`lc-btn big${c.shooting ? ' pulse' : ''}`} disabled={!c.canContest} onPointerDown={() => send({ type: 'contest' })}>✋ Contest <kbd>C</kbd></button>
+          <button className="lc-btn" disabled={!c.canDouble} onPointerDown={() => send({ type: 'double' })}>Double <kbd>X</kbd></button>
           <button className="lc-btn" onPointerDown={() => send({ type: 'foul' })}>Foul ⏱ <kbd>F</kbd></button>
         </div>
       </div>
@@ -237,12 +253,18 @@ export function HoopsControls({ sim, onFoul }) {
   }
   return (
     <div className="live-controls qb" role="group" aria-label="Offense controls">
-      <div className="lc-hint">{c.manual ? `${lastName(c.holder.name) ?? `#${c.holder.number}`} has it. Shot clock ${Math.ceil(c.shotClock)}.` : 'Tap a teammate to pass, or take over. Do nothing and they run the set.'}</div>
+      <div className="lc-hint">
+        {c.manual
+          ? `${c.holder.hot ? '🔥 ' : ''}${lastName(c.holder.name) ?? `#${c.holder.number}`} has it. Shot clock ${Math.ceil(c.shotClock)}.`
+          : firstTime
+            ? 'Shoot: tap once to rise, tap again when the bar hits green. Or tap a teammate to pass.'
+            : 'Tap a teammate to pass, or take over. Do nothing and they run the set.'}
+      </div>
       <div className="lc-reads four">
         {c.mates.map((m, i) => (
           <button key={m.key} className="lc-read" style={{ '--tone': openTone(m.open) }} onPointerDown={() => send({ type: 'pass', key: m.key })}>
             <span className="lc-n">{i + 1}</span>
-            <span className="lc-name">{lastName(m.name) ?? m.key}</span>
+            <span className="lc-name">{m.hot ? '🔥' : ''}{lastName(m.name) ?? m.key}</span>
             <span className="lc-dot" />
           </button>
         ))}
