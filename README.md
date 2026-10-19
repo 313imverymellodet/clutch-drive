@@ -44,6 +44,19 @@ During a play in Daily, Survivor and Practice you can take over:
 
 Crowd, touchdown roar, groan, cheer, tackle hit, QB cadence and the victory theme were generated with Viewmax (Everygen) and processed by `scripts/make-sounds.mjs` (trims silence, evens out volume, makes the crowd loop seamless, encodes AAC) into `public/sounds/`. `src/game/sound.js` downloads them as the game loads, decodes them on the first tap, and holds a clip asked for while audio is still starting (like the cadence on "Take the field") until it can play. It uses the built-in synth sounds for anything that fails to load. On iPhones it asks to be treated as media playback, so sound still plays with the silent switch on.
 
+## Clutch Hoops (`/hoops`, beta)
+
+The basketball game: down late, your ball, one possession at a time both ways.
+
+- **Offense:** call one of 7 sets (High Pick & Roll, Horns Pop, Floppy, Iso, Spain Pick & Roll, Post Up, Hammer). Each has paths, screens and a read order (`src/hoops/sets.js`). Then take over whenever you like: pass to any teammate (rings and buttons show who's open, keys 1–4), **Drive** (D), **Stepback** (S, can freeze your defender), or **Shoot** (Space): tap to rise, tap again at the top of the jump. The meter grades the release perfect / good / early / late. Do nothing and your team runs the set, with the handler working the reads.
+- **Defense:** pick a coverage: Man, Switch everything, Drop, Hedge & recover, 2-3 Zone. Each reacts to screens differently: switch swaps assignments and creates mismatches, drop gives up pull-ups, hedge leaves the roller open for a beat. Help defenders rotate to stop drives and leave their man open for the kick-out.
+- **End-game rules:** the game clock and shot clock run; a shot released before the horn counts; a timeout after a make or a stop advances the ball (saves about 4s); offensive rebounds reset the shot clock to 14. When you're behind, **Foul** to stop the clock. When the AI is behind, it fouls you, and you shoot free throws with a timing mini-game. A tie at the horn goes to a 45-second overtime.
+- **AI:** their defense keys on the sets you keep calling and sometimes disguises its look. Their offense attacks the coverages you lean on, and runs out the clock when it leads.
+- **Engine:** `src/hoops/sim.js` is a fixed-step, seeded half-court sim like the football one (instant replay re-runs your taps). `node scripts/hoops-outcomes.mjs` plays every set against every coverage to tune it: currently about 0.96 points per possession, with clear strengths and weaknesses per set.
+- **Characters:** `blender/build_player.py -- --hoops` builds `public/models/hoops.glb`: no helmet, hair, tank top, shorts, plus Dribble, Shoot, Pass, Defend, Contest and Layup clips.
+- Daily (`/hoops`) is the same made-up scenario for everyone each day. Practice (`/hoops?mode=practice`) lets you pick any two teams. The win probability is an estimate for now. Real NBA endings and a fitted model from hoopR play-by-play are the next step, along with Survivor, Defense mode and head-to-head for hoops.
+- `node scripts/hoops-e2e.mjs [outDir] [w] [h] [mode]` plays a whole game through the UI.
+
 ## Real moments and win probability
 
 `npm run data` (or `node scripts/build-moments.mjs <cacheDir> 2012 2026`) downloads nflverse play-by-play and builds two files:
@@ -129,6 +142,7 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | `scripts/build-moments.mjs`, `src/game/moments.js`, `src/game/winprob.js` | nflverse data pipeline, real moments, live win probability |
 | `scripts/build-players.mjs`, `src/game/real.jsx` | Real lineups and logos for test builds |
 | `src/ui/LiveControls.jsx`, `src/components/LiveRings.jsx` | Live QB and ball-carrier controls |
+| `src/hoops/*`, `src/pages/Hoops.jsx` | Clutch Hoops: sets, sim, game rules, AI, scene, UI |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |

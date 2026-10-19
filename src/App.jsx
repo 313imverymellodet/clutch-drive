@@ -14,6 +14,7 @@ import { MuteButton } from './ui/GameUI'
 const Game = lazy(() => import('./pages/Game'))
 const H2H = lazy(() => import('./pages/H2H'))
 const Defend = lazy(() => import('./pages/Defend'))
+const Hoops = lazy(() => import('./pages/Hoops'))
 
 const MODE_LABEL = { daily: 'Daily Drive', survivor: 'Survivor', practice: 'Practice', defense: 'Defense', h2h: 'Head-to-Head' }
 
@@ -34,6 +35,15 @@ export default function App() {
       <Shell title="Head-to-Head" mode="h2h">
         <Suspense fallback={<div className="loading">Lacing up cleats…</div>}>
           <H2H room={query.get('room')} />
+        </Suspense>
+      </Shell>
+    )
+  } else if (path === '/hoops') {
+    const mode = query.get('mode') ?? 'daily'
+    page = (
+      <Shell title="Clutch Hoops" mode={`hoops-${mode}`}>
+        <Suspense fallback={<div className="loading">Lacing up sneakers…</div>}>
+          <Hoops mode={mode} key={mode} />
         </Suspense>
       </Shell>
     )
@@ -64,11 +74,15 @@ function Shell({ title, mode, children }) {
         </Link>
         <div className="top-right">
           <nav className="tabs">
-            {['daily', 'survivor', 'practice', 'defense', 'h2h'].map((m) => (
-              <Link key={m} to={m === 'h2h' ? '/h2h' : `/play?mode=${m}`} className={mode === m ? 'on' : ''}>
-                {m === 'h2h' ? 'H2H' : MODE_LABEL[m].replace(' Drive', '')}
-              </Link>
-            ))}
+            {mode?.startsWith('hoops')
+              ? [['hoops-daily', 'Daily', '/hoops?mode=daily'], ['hoops-practice', 'Practice', '/hoops?mode=practice'], ['nfl', '🏈 Football', '/play?mode=daily']].map(([m, label, to]) => (
+                  <Link key={m} to={to} className={mode === m ? 'on' : ''}>{label}</Link>
+                ))
+              : ['daily', 'survivor', 'practice', 'defense', 'h2h', 'hoops'].map((m) => (
+                  <Link key={m} to={m === 'h2h' ? '/h2h' : m === 'hoops' ? '/hoops' : `/play?mode=${m}`} className={mode === m ? 'on' : ''}>
+                    {m === 'h2h' ? 'H2H' : m === 'hoops' ? '🏀 Hoops' : MODE_LABEL[m].replace(' Drive', '')}
+                  </Link>
+                ))}
           </nav>
           {mode && <MuteButton />}
         </div>

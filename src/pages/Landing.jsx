@@ -32,6 +32,7 @@ export default function Landing() {
         <div className="land-links">
           <Link to="/play?mode=survivor">Survivor</Link>
           <Link to="/h2h">Head-to-Head</Link>
+          <Link to="/hoops">🏀 Hoops <span className="new-pill">NEW</span></Link>
           <Link to="/locker">Locker Room</Link>
           <Link to="/play?mode=daily" className="btn primary small">Play</Link>
         </div>
@@ -98,6 +99,11 @@ export default function Landing() {
       </section>
 
       <section className="modes">
+        <Link to="/hoops" className="mode-card hoops">
+          <span className="mode-emoji">🏀</span>
+          <h3>Clutch Hoops <span className="new-pill">NEW</span></h3>
+          <p>Down late, your ball. Call the set, read the coverage, time your jumper at the top. A new game every day.</p>
+        </Link>
         <Link to="/play?mode=daily" className="mode-card daily">
           <span className="mode-emoji">📅</span>
           <h3>Daily Drive</h3>

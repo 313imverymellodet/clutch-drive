@@ -535,3 +535,47 @@ a { color: inherit; }
 .lc-btn kbd { font: inherit; font-size: 10px; opacity: 0.6; margin-left: 3px; }
 @media (max-width: 600px) { .lc-btn kbd { display: none; } .lc-read { font-size: 13px; padding: 9px 6px; } }
 .live-controls + .skip { bottom: calc(100% + 6px); }
+
+/* v8: Clutch Hoops */
+.new-pill { display: inline-block; background: #ff5a1f; color: #fff; font-size: 10px; font-weight: 900; letter-spacing: 0.06em; border-radius: 999px; padding: 2px 6px; vertical-align: middle; margin-left: 4px; }
+.mode-card.hoops { background: #ffb36b; }
+.hbug .bug-clock { position: relative; }
+.shot-clock { display: inline-block; margin-left: 6px; min-width: 22px; padding: 1px 4px; border-radius: 4px; background: #ff3b30; color: #fff; font-size: 12px; text-align: center; }
+.hsheet .sheet-head { gap: 8px; }
+.look-chip { font-size: 12px; font-weight: 800; opacity: 0.85; }
+.set-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 8px 0; }
+.set-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; border: 2.5px solid var(--ink); background: #fff; border-radius: 12px; padding: 6px 4px; font-weight: 900; font-size: 12px; text-align: center; }
+.set-card.on { background: #fff4b8; box-shadow: 0 0 0 3px #ffd400; }
+.set-card .kbd { position: absolute; top: 4px; left: 6px; font-size: 10px; opacity: 0.5; }
+.set-card .tag { font-size: 9px; }
+.set-icon { width: 100%; max-width: 110px; height: auto; background: #1d3b2a; border-radius: 6px; }
+.set-icon .ct { fill: none; stroke: rgba(255,255,255,0.35); stroke-width: 0.6; }
+.set-icon .rim { fill: none; stroke: #ff8a3d; stroke-width: 0.8; }
+.set-desc { margin: 2px 0 8px; font-size: 13px; }
+.call-row { display: flex; gap: 8px; align-items: center; }
+.call-row .btn.big { flex: 1; }
+.to-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 800; border: 2px solid var(--ink); border-radius: 10px; padding: 8px; background: #fff; }
+.to-toggle.on { background: #d6f5e0; }
+.lc-reads.four { grid-template-columns: repeat(4, 1fr); }
+.live-controls.shooting { text-align: center; }
+.meter { position: relative; height: 22px; border-radius: 11px; background: rgba(255,255,255,0.15); overflow: hidden; margin-bottom: 8px; }
+.meter-good { position: absolute; top: 0; bottom: 0; background: rgba(255,212,0,0.35); }
+.meter-green { position: absolute; top: 0; bottom: 0; background: #2ecc71; }
+.meter-fill { position: absolute; top: 0; bottom: 0; left: 0; border-right: 4px solid #fff; background: rgba(255,255,255,0.25); }
+.lc-btn.release { width: 100%; font-size: 18px; padding: 16px; }
+.lc-btn.big[style] { box-shadow: inset 0 -4px 0 var(--tone); }
+.ft-card { text-align: center; }
+.ft-dots { display: inline-flex; gap: 6px; }
+.ft-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink); background: #fff; }
+.ft-dots i.made { background: #2ecc71; }
+.ft-dots i.missed { background: #ff4d4d; }
+.ft-meter { position: relative; height: 26px; margin: 10px 0 12px; border-radius: 13px; background: linear-gradient(90deg, #ff4d4d, #ffd400 30%, #2ecc71 44%, #2ecc71 56%, #ffd400 70%, #ff4d4d); border: 2.5px solid var(--ink); }
+.ft-green { position: absolute; left: 44%; width: 12%; top: -4px; bottom: -4px; border: 2px dashed #fff; border-radius: 6px; }
+.ft-mark { position: absolute; top: -6px; bottom: -6px; width: 6px; margin-left: -3px; background: var(--ink); border-radius: 3px; }
+@media (max-width: 600px) {
+  .set-cards { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .set-card { font-size: 10px; padding: 4px 2px; }
+  .set-card .tag { display: none; }
+  .lc-reads.four .lc-name { font-size: 11px; }
+  .to-toggle { font-size: 11px; padding: 6px; }
+}

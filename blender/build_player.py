@@ -4,6 +4,8 @@ Exports public/models/player.glb and saves blender/player.blend.
 
 Run:  /Applications/Blender.app/Contents/MacOS/Blender -b --python blender/build_player.py
       add `-- --preview` to also render PNG previews into blender/preview/
+      add `-- --hoops` for the basketball player (no helmet, tank top, shorts, hoops clips):
+      exports public/models/hoops.glb and blender/hoops.blend
 
 Conventions (Blender, Z up): character faces -Y, its left side is +X.
 Material names (Jersey, Pants, Helmet, Stripe, ...) are what the web app recolors per team.
@@ -17,8 +19,9 @@ from mathutils import Vector
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-GLB_PATH = ROOT / "public" / "models" / "player.glb"
-BLEND_PATH = HERE / "player.blend"
+HOOPS = "--hoops" in sys.argv
+GLB_PATH = ROOT / "public" / "models" / ("hoops.glb" if HOOPS else "player.glb")
+BLEND_PATH = HERE / ("hoops.blend" if HOOPS else "player.blend")
 PREVIEW = "--preview" in sys.argv
 FPS = 30
 
@@ -40,6 +43,7 @@ PALETTE = {
     "Glove": (0.95, 0.95, 0.95),
     "Socks": (0.95, 0.95, 0.95),
     "Shoe": (0.08, 0.08, 0.1),
+    "Hair": (0.1, 0.07, 0.05),
 }
 MATS = {}
 for name, rgb in PALETTE.items():
@@ -102,31 +106,58 @@ def torus(loc, major, minor, mat, bone, scale=None):
     return finish(bpy.context.active_object, mat, bone, scale=scale)
 
 
-for side, sx in (("L", 1), ("R", -1)):
-    x = 0.11 * sx
-    # legs
-    cube((x, -0.035, 0.04), (0.12, 0.21, 0.08), "Shoe", f"foot.{side}")
-    cyl((x, 0, 0.19), 0.055, 0.26, "Socks", f"shin.{side}")
-    cyl((x, 0, 0.45), 0.075, 0.26, "Pants", f"thigh.{side}")
-    # arms
-    ax = 0.26 * sx
-    cyl((ax, 0, 0.85), 0.056, 0.22, "Jersey", f"upper_arm.{side}")
-    cyl((ax, 0, 0.65), 0.046, 0.2, "Skin", f"forearm.{side}")
-    sphere((ax, 0, 0.53), 0.066, "Glove", f"forearm.{side}", seg=8, rings=6)
-    # face details
-    sphere((0.075 * sx, -0.29, 1.21), 0.034, "Eye", "head", seg=8, rings=6, scale=(1, 0.5, 1.15))
-    sphere((0.125 * sx, -0.255, 1.13), 0.03, "Blush", "head", seg=8, rings=5, scale=(1.3, 0.4, 0.8))
+if HOOPS:
+    # basketball: bare arms and legs, tank top, long shorts, low socks, chunky sneakers, hair instead of a helmet
+    for side, sx in (("L", 1), ("R", -1)):
+        x = 0.11 * sx
+        cube((x, -0.04, 0.045), (0.13, 0.23, 0.09), "Shoe", f"foot.{side}")
+        cyl((x, 0, 0.115), 0.058, 0.07, "Socks", f"shin.{side}")
+        cyl((x, 0, 0.22), 0.05, 0.18, "Skin", f"shin.{side}")
+        cyl((x, 0, 0.43), 0.088, 0.3, "Pants", f"thigh.{side}")
+        cube((0.192 * sx, 0, 0.43), (0.012, 0.06, 0.26), "Stripe", f"thigh.{side}")
+        ax = 0.26 * sx
+        cyl((ax, 0, 0.85), 0.05, 0.22, "Skin", f"upper_arm.{side}")
+        cyl((ax, 0, 0.65), 0.044, 0.2, "Skin", f"forearm.{side}")
+        sphere((ax, 0, 0.535), 0.058, "Skin", f"forearm.{side}", seg=8, rings=6)
+        sphere((0.075 * sx, -0.255, 1.2), 0.034, "Eye", "head", seg=8, rings=6, scale=(1, 0.5, 1.15))
+        sphere((0.13 * sx, -0.215, 1.12), 0.03, "Blush", "head", seg=8, rings=5, scale=(1.3, 0.4, 0.8))
+        sphere((0.255 * sx, 0.0, 1.18), 0.05, "Skin", "head", seg=8, rings=6, scale=(0.6, 1, 1))  # ears
 
-# hips + torso
-cube((0, 0, 0.6), (0.34, 0.22, 0.16), "Pants", "hips")
-cone((0, 0, 0.8), 0.17, 0.21, 0.36, "Jersey", "spine", scale=(1, 0.72, 1))
-sphere((0, 0, 0.97), 0.27, "Jersey", "spine", seg=10, rings=6, scale=(1, 0.66, 0.32))
-# head: big helmet, face peeking out, facemask, stripe
-sphere((0, 0, 1.22), 0.275, "Helmet", "head", seg=12, rings=8, scale=(1, 1.04, 1))
-sphere((0, 0.035, 1.235), 0.282, "Stripe", "head", seg=12, rings=8, scale=(0.2, 1.04, 1))
-sphere((0, -0.12, 1.17), 0.19, "Skin", "head", seg=12, rings=8)
-torus((0, -0.13, 1.04), 0.2, 0.014, "Mask", "head")
-torus((0, -0.13, 1.1), 0.205, 0.012, "Mask", "head")
+    cube((0, 0, 0.6), (0.36, 0.23, 0.17), "Pants", "hips")
+    cone((0, 0, 0.8), 0.17, 0.2, 0.36, "Jersey", "spine", scale=(1, 0.72, 1))
+    sphere((0, 0, 0.965), 0.2, "Jersey", "spine", seg=10, rings=6, scale=(1, 0.66, 0.3))
+    cyl((0, 0, 0.99), 0.075, 0.08, "Skin", "spine")  # neck
+    torus((0, 0, 0.985), 0.095, 0.014, "Stripe", "spine", scale=(1, 0.75, 1))  # collar trim
+    sphere((0, 0, 1.2), 0.26, "Skin", "head", seg=12, rings=8)
+    sphere((0, 0.035, 1.255), 0.262, "Hair", "head", seg=12, rings=8, scale=(1.02, 1.0, 0.86))
+
+else:
+    for side, sx in (("L", 1), ("R", -1)):
+        x = 0.11 * sx
+        # legs
+        cube((x, -0.035, 0.04), (0.12, 0.21, 0.08), "Shoe", f"foot.{side}")
+        cyl((x, 0, 0.19), 0.055, 0.26, "Socks", f"shin.{side}")
+        cyl((x, 0, 0.45), 0.075, 0.26, "Pants", f"thigh.{side}")
+        # arms
+        ax = 0.26 * sx
+        cyl((ax, 0, 0.85), 0.056, 0.22, "Jersey", f"upper_arm.{side}")
+        cyl((ax, 0, 0.65), 0.046, 0.2, "Skin", f"forearm.{side}")
+        sphere((ax, 0, 0.53), 0.066, "Glove", f"forearm.{side}", seg=8, rings=6)
+        # face details
+        sphere((0.075 * sx, -0.29, 1.21), 0.034, "Eye", "head", seg=8, rings=6, scale=(1, 0.5, 1.15))
+        sphere((0.125 * sx, -0.255, 1.13), 0.03, "Blush", "head", seg=8, rings=5, scale=(1.3, 0.4, 0.8))
+
+    # hips + torso
+    cube((0, 0, 0.6), (0.34, 0.22, 0.16), "Pants", "hips")
+    cone((0, 0, 0.8), 0.17, 0.21, 0.36, "Jersey", "spine", scale=(1, 0.72, 1))
+    sphere((0, 0, 0.97), 0.27, "Jersey", "spine", seg=10, rings=6, scale=(1, 0.66, 0.32))
+    # head: big helmet, face peeking out, facemask, stripe
+    sphere((0, 0, 1.22), 0.275, "Helmet", "head", seg=12, rings=8, scale=(1, 1.04, 1))
+    sphere((0, 0.035, 1.235), 0.282, "Stripe", "head", seg=12, rings=8, scale=(0.2, 1.04, 1))
+    sphere((0, -0.12, 1.17), 0.19, "Skin", "head", seg=12, rings=8)
+    torus((0, -0.13, 1.04), 0.2, 0.014, "Mask", "head")
+    torus((0, -0.13, 1.1), 0.205, 0.012, "Mask", "head")
+
 
 bpy.ops.object.select_all(action="DESELECT")
 for o in PARTS:
@@ -507,6 +538,81 @@ keyed("Fall", [
     }, {"fwd": 0.4, "pitch": 90}),
 ])
 
+
+# ---------------------------------------------------------------- basketball clips
+if HOOPS:
+    def defend(t):
+        p = t * TAU
+        b = 2 * s(p)
+        return ({
+            "hips": (18,), "spine": (16 + b,), "head": (-26 - b,),
+            "thigh.L": (55, 22), "thigh.R": (55, 22), "shin.L": (-70,), "shin.R": (-70,),
+            "upper_arm.L": (45, 62 + 4 * s(p)), "upper_arm.R": (45, 62 - 4 * s(p)),
+            "forearm.L": (25,), "forearm.R": (25,),
+        }, None)
+
+    sampled("Defend", 40, defend, step=2)
+
+    def dribble(t):
+        p = t * TAU
+        return ({
+            "hips": (12,), "spine": (14,), "head": (-16,),
+            "thigh.L": (35, 10), "thigh.R": (35, 10), "shin.L": (-50,), "shin.R": (-50,),
+            "upper_arm.R": (28 + 6 * s(p), 14), "forearm.R": (45 + 35 * (0.5 + 0.5 * s(p)),),
+            "upper_arm.L": (55, 28), "forearm.L": (60,),
+        }, None)
+
+    sampled("Dribble", 16, dribble, step=2)
+
+    SET = {
+        "spine": (10,), "head": (-8,),
+        "thigh.L": (40,), "thigh.R": (40,), "shin.L": (-62,), "shin.R": (-62,),
+        "upper_arm.L": (95, 8), "upper_arm.R": (95, 8), "forearm.L": (85,), "forearm.R": (85,),
+    }
+    keyed("Shoot", [
+        (0, SET, None),
+        (7, {**SET, "thigh.L": (55,), "thigh.R": (55,), "shin.L": (-85,), "shin.R": (-85,), "spine": (14,)}, None),
+        (13, {
+            "spine": (2,), "head": (-12,),
+            "thigh.L": (8,), "thigh.R": (8,), "shin.L": (-12,), "shin.R": (-12,),
+            "upper_arm.L": (150, 12), "upper_arm.R": (155, 6), "forearm.L": (70,), "forearm.R": (95,),
+        }, None, {"lift": 0.16}),
+        (18, {
+            "spine": (0,), "head": (-18,),
+            "thigh.L": (4,), "thigh.R": (4,), "shin.L": (-18,), "shin.R": (-18,),
+            "upper_arm.L": (150, 20), "upper_arm.R": (172, 4), "forearm.L": (55,), "forearm.R": (5,),
+        }, None, {"lift": 0.27}),
+        (25, {
+            "spine": (2,), "head": (-15,),
+            "thigh.L": (10,), "thigh.R": (10,), "shin.L": (-25,), "shin.R": (-25,),
+            "upper_arm.L": (130, 22), "upper_arm.R": (168, 4), "forearm.L": (40,), "forearm.R": (30,),
+        }, None, {"lift": 0.14}),
+        (33, {**idle(0)[0], "upper_arm.R": (60, 10), "forearm.R": (40,)}, None),
+    ])
+
+    keyed("Pass", [
+        (0, {"spine": (8,), "upper_arm.L": (70, 14), "upper_arm.R": (70, 14), "forearm.L": (105,), "forearm.R": (105,), "thigh.L": (15,), "shin.L": (-25,)}, None),
+        (5, {"spine": (14,), "upper_arm.L": (92, 4), "upper_arm.R": (92, 4), "forearm.L": (8,), "forearm.R": (8,), "thigh.L": (28,), "shin.L": (-22,), "thigh.R": (-10,)}, None),
+        (14, {**idle(0)[0]}, None),
+    ])
+
+    keyed("Contest", [
+        (0, defend(0)[0], None),
+        (6, {"spine": (2,), "head": (-25,), "thigh.L": (10,), "thigh.R": (10,), "shin.L": (-20,), "shin.R": (-20,),
+             "upper_arm.R": (172, 8), "forearm.R": (5,), "upper_arm.L": (120, 30), "forearm.L": (20,)}, None, {"lift": 0.22}),
+        (14, {"spine": (6,), "head": (-20,), "upper_arm.R": (165, 8), "forearm.R": (15,), "upper_arm.L": (90, 30), "forearm.L": (30,)}, None, {"lift": 0.04}),
+        (22, defend(0)[0], None),
+    ])
+
+    keyed("Layup", [
+        (0, run(0.25)[0], None),
+        (8, {"spine": (4,), "head": (-25,), "thigh.L": (75,), "shin.L": (-80,), "thigh.R": (-10,), "shin.R": (-25,),
+             "upper_arm.R": (165, 10), "forearm.R": (15,), "upper_arm.L": (90, 25), "forearm.L": (60,)}, None, {"lift": 0.32}),
+        (14, {"spine": (2,), "head": (-30,), "thigh.L": (40,), "shin.L": (-60,), "thigh.R": (5,), "shin.R": (-20,),
+             "upper_arm.R": (175, 6), "forearm.R": (2,), "upper_arm.L": (80, 25), "forearm.L": (60,)}, None, {"lift": 0.36}),
+        (24, {**idle(0)[0]}, None),
+    ])
+
 rig.animation_data.action = None
 set_pose({})
 bpy.context.view_layer.update()
@@ -515,7 +621,7 @@ print("CAL", CAL, "UP", UP_AX, UP_SIGN, "FWD", FWD_AX, FWD_SIGN)
 
 # ---------------------------------------------------------------- previews
 if PREVIEW:
-    out = HERE / "preview"
+    out = HERE / ("preview_hoops" if HOOPS else "preview")
     out.mkdir(exist_ok=True)
     cam_data = bpy.data.cameras.new("Cam")
     cam_data.type = "ORTHO"
@@ -529,6 +635,9 @@ if PREVIEW:
     scene.render.resolution_x = scene.render.resolution_y = 360
     shots = [("Idle", 0), ("Stance", 0), ("Run", 5), ("Run", 15), ("Throw", 10), ("Throw", 16),
              ("Catch", 6), ("Dive", 24), ("Fall", 24), ("Celebrate", 12), ("Block", 0)]
+    if HOOPS:
+        shots = [("Idle", 0), ("Defend", 0), ("Run", 5), ("Dribble", 4), ("Shoot", 7), ("Shoot", 18), ("Pass", 5),
+                 ("Contest", 6), ("Layup", 14), ("Celebrate", 12), ("Block", 0)]
     views = {"front": ((0.9, -3.2, 1.3), (0, 0, 0.7)), "side": ((-3.4, -0.6, 1.0), (0, -0.3, 0.6))}
     for clip, frame in shots:
         rig.animation_data.action = bpy.data.actions[clip]
