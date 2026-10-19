@@ -9,3 +9,5 @@ blender/preview
 .claude
 .env*
 .data-cache
+blender/preview_hoops/
+blender/*.blend1

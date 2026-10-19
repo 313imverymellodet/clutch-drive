@@ -9,7 +9,7 @@ export const PLAYER_SCALE = 1.2 // model is ~1.47 units tall; 1 unit = 1 yard on
 
 // Clip names come straight from the Blender action names in blender/build_player.py
 export const CLIPS = ['Idle', 'Stance', 'Run', 'Block', 'Throw', 'Catch', 'Dive', 'Fall', 'Celebrate']
-export const ONE_SHOT = new Set(['Throw', 'Catch', 'Dive', 'Fall'])
+export const ONE_SHOT = new Set(['Throw', 'Catch', 'Dive', 'Fall', 'Shoot', 'Pass', 'Contest', 'Layup'])
 export const THROW_RELEASE = 16 / 30 // frame 16 of the Throw clip at 30fps
 
 export const SKIN_TONES = ['#f1c7a5', '#dfa47e', '#c68863', '#a5694a', '#7d4a33', '#5a3524']
@@ -96,6 +96,24 @@ export function buildCharacter(gltf, team, skin = SKIN_TONES[1], number = null) 
   if (number != null) addNumbers(root, number, team)
   root.scale.setScalar(PLAYER_SCALE)
   // GLTFLoader strips "." from node names: "forearm.R" -> "forearmR"
+  const hand = root.getObjectByName('forearmR')
+  return { root, hand, animator: new Animator(root, gltf.animations) }
+}
+
+export const HOOPS_MODEL_URL = '/models/hoops.glb'
+export const HOOPS_SCALE = 4.4 // feet: about a 6'6" player, chibi proportions
+
+/** The basketball model: uniform = material slot -> color (see src/hoops/teams.js hoopsUniform). */
+export function buildHoopsCharacter(gltf, uniform, skin, number, numberStyle) {
+  const root = cloneSkinned(gltf.scene)
+  root.traverse((o) => {
+    if (o.isMesh) {
+      o.material = toonMaterial(o.material.name, o.material, uniform, skin)
+      o.frustumCulled = false
+    }
+  })
+  if (number != null) addNumbers(root, number, numberStyle)
+  root.scale.setScalar(HOOPS_SCALE)
   const hand = root.getObjectByName('forearmR')
   return { root, hand, animator: new Animator(root, gltf.animations) }
 }

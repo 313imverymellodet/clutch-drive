@@ -52,8 +52,15 @@ export function logoUrl(abbr) {
   return `https://a.espncdn.com/i/teamlogos/nfl/500/${ESPN[abbr] ?? abbr.toLowerCase()}.png`
 }
 
-export function TeamLogo({ abbr, size = 22, className = 'team-logo' }) {
-  const url = logoUrl(abbr)
+const ESPN_NBA = { GSW: 'gs', NOP: 'no', NYK: 'ny', SAS: 'sa', UTA: 'utah', WAS: 'wsh' }
+/** NBA team logo URL (same CDN; CORS-enabled for the court texture). */
+export function nbaLogoUrl(abbr) {
+  if (!REAL || !abbr) return null
+  return `https://a.espncdn.com/i/teamlogos/nba/500/${ESPN_NBA[abbr] ?? abbr.toLowerCase()}.png`
+}
+
+export function TeamLogo({ abbr, size = 22, className = 'team-logo', league = 'nfl' }) {
+  const url = league === 'nba' ? nbaLogoUrl(abbr) : logoUrl(abbr)
   if (!url) return null
   return <img className={className} src={url} alt="" width={size} height={size} loading="lazy" decoding="async" />
 }
