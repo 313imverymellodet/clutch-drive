@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/og.js": {
+      "includeFiles": "api/_fonts/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/play",
@@ -20,6 +25,10 @@
     {
       "source": "/locker",
       "destination": "/locker.html"
+    },
+    {
+      "source": "/r",
+      "destination": "/api/r"
     },
     {
       "source": "/(.*)",
