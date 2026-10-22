@@ -1,14 +1,65 @@
 {
   "name": "Clutch Drive",
   "short_name": "Clutch Drive",
-  "description": "Trailing late. Clock running. Call the plays. A new two-minute drive every day.",
+  "description": "Free daily football and basketball strategy games: real NFL and NBA endings, call the plays, win it late.",
   "start_url": "/play?mode=daily",
   "display": "standalone",
   "background_color": "#f7f5ef",
   "theme_color": "#16181d",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" },
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "categories": [
+    "games",
+    "sports"
+  ],
+  "shortcuts": [
+    {
+      "name": "Daily Drive",
+      "short_name": "Football",
+      "url": "/play?mode=daily",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Daily Hoops",
+      "short_name": "Hoops",
+      "url": "/hoops",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Head-to-Head",
+      "short_name": "Duel",
+      "url": "/h2h",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

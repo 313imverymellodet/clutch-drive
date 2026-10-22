@@ -1,5 +1,4 @@
-import { Suspense, lazy, useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { NFL_TEAMS, TEAM_BY_ABBR } from '../data/nflTeams'
 import { dayNumber, fmtBallOn, fmtClock, todayKey } from '../game/drive'
 import { DATA_CREDIT, momentForDay, momentLabel, scenarioFromMoment } from '../game/moments'
@@ -9,7 +8,31 @@ import { Link } from '../router'
 import { BRAND } from '../brand'
 import { Logo } from '../ui/Logo'
 
-const HeroScene = lazy(() => import('../scenes/HeroScene'))
+const HeroCanvas = lazy(() => import('../scenes/HeroCanvas'))
+
+/** Mount the 3D hero once the page has painted and the main thread is idle (skipped on data saver). */
+function useDeferredHero() {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    if (navigator.connection?.saveData) return
+    const idle = window.requestIdleCallback ?? ((fn) => setTimeout(fn, 1200))
+    const cancel = window.cancelIdleCallback ?? clearTimeout
+    const id = idle(() => setShow(true), { timeout: 2500 })
+    return () => cancel(id)
+  }, [])
+  return show
+}
+
+// pick the team's text color, or black/white when that color doesn't read on the background (WCAG 4.5:1)
+const lum = (hex) => {
+  const n = parseInt(hex.slice(1), 16)
+  const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4))
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+const contrast = (a, b) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
+const readableOn = (bg, fg) => (contrast(bg, fg) >= 4.5 ? fg : contrast(bg, '#ffffff') >= contrast(bg, '#111111') ? '#ffffff' : '#111111')
+
+const resultChip = (r) => (r ? (r.status === 'won' ? '✅ Won' : '❌ Played') : 'Not played yet')
 
 export default function Landing() {
   const key = todayKey()
@@ -20,7 +43,11 @@ export default function Landing() {
   const realData = useRealData()
   const qb = useMemo(() => rosterFor({ moment: sc.moment, offense: sc.offense, defense: sc.defense })?.off?.qb?.[1], [sc, realData]) // eslint-disable-line react-hooks/exhaustive-deps
   const played = load(`cd.daily.${key}`, null)
+  const hoopsPlayed = load(`cd.hoops.${key}`, null)
   const surv = load('cd.survivor', { best: 0 })
+  const streak = load('cd.dailyStreak', { streak: 0 }).streak
+  const hoopsStreak = load('cd.hoops.stats', { streak: 0 }).streak
+  const showHero = useDeferredHero()
 
   return (
     <div className="landing">
@@ -33,18 +60,19 @@ export default function Landing() {
           <Link to="/play?mode=survivor">Survivor</Link>
           <Link to="/h2h">Head-to-Head</Link>
           <Link to="/hoops">🏀 Hoops <span className="new-pill">NEW</span></Link>
-          <Link to="/locker">Locker Room</Link>
+          <Link to="/how-to-play">How to play</Link>
           <Link to="/play?mode=daily" className="btn primary small">Play</Link>
         </div>
       </nav>
 
+      <main>
       <header className="hero">
         <div className="hero-canvas" aria-hidden="true">
-          <Suspense fallback={null}>
-            <Canvas dpr={[1, 2]} camera={{ fov: 30, position: [0, 3.9, 11.6] }} gl={{ alpha: true }} onCreated={({ camera }) => camera.lookAt(0, 0.85, 0)}>
-              <HeroScene offense={off} defense={def} />
-            </Canvas>
-          </Suspense>
+          {showHero && (
+            <Suspense fallback={null}>
+              <HeroCanvas offense={off} defense={def} />
+            </Suspense>
+          )}
         </div>
         <div className="hero-copy">
           <div className="eyebrow pill">
@@ -66,11 +94,41 @@ export default function Landing() {
             <Link to="/play?mode=daily" className="btn primary big">
               {played ? "See today's result" : "Play today's drive"}
             </Link>
-            <Link to="/h2h" className="btn big">⚔️ Duel a friend</Link>
+            <Link to="/hoops" className="btn big">🏀 Daily Hoops</Link>
           </div>
           <p className="hero-fine">📅 Today is a real moment: {momentLabel(sc.moment)}.{qb && <> You're {qb}.</>} Can you beat what really happened?</p>
         </div>
       </header>
+
+      <section className="today" aria-labelledby="today-h">
+        <h2 id="today-h">Today’s challenges</h2>
+        <div className="today-grid">
+          <Link to="/play?mode=daily" className={`today-card${played ? ' done' : ''}`}>
+            <span className="today-emoji">🏈</span>
+            <span className="today-text">
+              <b>Daily Drive #{day}</b>
+              <span>{off.abbr} vs {def.abbr} · down {sc.scoreDef - sc.scoreOff}, {fmtClock(sc.clock)} left</span>
+            </span>
+            <span className="today-status">{resultChip(played)}{streak > 1 ? ` · 🔥${streak}` : ''}</span>
+          </Link>
+          <Link to="/hoops" className={`today-card${hoopsPlayed ? ' done' : ''}`}>
+            <span className="today-emoji">🏀</span>
+            <span className="today-text">
+              <b>Daily Hoops #{day}</b>
+              <span>A real NBA ending. Down late, your ball.</span>
+            </span>
+            <span className="today-status">{resultChip(hoopsPlayed)}{hoopsStreak > 1 ? ` · 🔥${hoopsStreak}` : ''}</span>
+          </Link>
+          <Link to="/h2h" className="today-card">
+            <span className="today-emoji">⚔️</span>
+            <span className="today-text">
+              <b>Duel a friend</b>
+              <span>Send a link. Call their defense, they call yours.</span>
+            </span>
+            <span className="today-status">Online</span>
+          </Link>
+        </div>
+      </section>
 
       <section className="how">
         <h2>How it works</h2>
@@ -136,7 +194,7 @@ export default function Landing() {
         <div className="marquee" aria-label="Teams">
           <div className="marquee-track">
             {[...NFL_TEAMS, ...NFL_TEAMS].map((t, i) => (
-              <span key={i} className="team-chip" style={{ background: t.endzone, color: t.text }} aria-hidden={i >= NFL_TEAMS.length}>
+              <span key={i} className="team-chip" style={{ background: t.endzone, color: readableOn(t.endzone, t.text) }} aria-hidden={i >= NFL_TEAMS.length}>
                 {t.abbr}
               </span>
             ))}
@@ -149,8 +207,11 @@ export default function Landing() {
         <Link to="/play?mode=daily" className="btn primary big">Take the field</Link>
       </section>
 
+      </main>
+
       <footer className="land-foot">
-        <p>{BRAND.disclaimer}</p>
+        <p><Link to="/how-to-play">How to play</Link> · <Link to="/locker">Locker Room</Link> · <Link to="/play?mode=practice">Practice</Link> · <Link to="/hoops?mode=practice">Hoops practice</Link></p>
+        <p>{BRAND.disclaimer} NBA team names and colors are used the same way.</p>
         <p>{DATA_CREDIT} <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noreferrer">nflverse</a></p>
       </footer>
     </div>

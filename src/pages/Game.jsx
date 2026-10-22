@@ -477,6 +477,7 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
           {mode === 'survivor' && !won && <button className="btn" onClick={onNewRun}>Start a new run</button>}
           {mode === 'practice' && <button className="btn" onClick={onPractice}>New practice drive</button>}
           {mode === 'daily' && won && <button className="btn primary" onClick={() => navigate('/play?mode=defense&daily=1')}>🛡️ Now hold the lead</button>}
+          {mode === 'daily' && <button className="btn" onClick={() => navigate('/hoops')}>🏀 Today’s Daily Hoops</button>}
           {mode === 'daily' && <button className="btn" onClick={() => navigate('/play?mode=survivor')}>Play Survivor</button>}
         </div>
         {mode === 'daily' && (

@@ -15,7 +15,7 @@ export function Scorebug({ drive, offense, defense, clock, running }) {
         <span className="bug-team" style={{ background: offense.endzone, color: offense.text }}>
           <TeamLogo abbr={offense.abbr} size={18} className="bug-logo" />
           {offense.abbr}
-          <span className="bug-poss" aria-label="Your ball">●</span>
+          <span className="bug-poss" role="img" aria-label="Your ball">●</span>
         </span>
         <span className="bug-score">{drive.scoreOff}</span>
         <span className={`bug-clock${late ? ' late' : ''}${running ? ' running' : ''}`}>
@@ -29,7 +29,7 @@ export function Scorebug({ drive, offense, defense, clock, running }) {
       </div>
       <div className="bug-sub">
         <span>{downAndDistance(drive)} · {fmtBallOn(drive.ballOn)}</span>
-        <span className="bug-tos" aria-label={`${drive.timeouts} timeouts left`}>
+        <span className="bug-tos" role="img" aria-label={`${drive.timeouts} timeouts left`}>
           {[0, 1, 2].map((i) => (
             <i key={i} className={i < drive.timeouts ? 'on' : ''} />
           ))}
@@ -164,23 +164,7 @@ export function DefenseRead({ shown, tip, keyOn = null }) {
   )
 }
 
-export function MuteButton() {
-  const [m, setM] = useState(isMuted())
-  useEffect(() => onMuteChange(setM), [])
-  return (
-    <button
-      className="icon-btn"
-      aria-label={m ? 'Unmute sound' : 'Mute sound'}
-      onClick={() => {
-        unlock()
-        setMuted(!m)
-        if (m) sfx.check() // just unmuted: a quick crowd pop so you know it's working
-      }}
-    >
-      {m ? '🔇' : '🔊'}
-    </button>
-  )
-}
+export { MuteButton } from './MuteButton'
 
 // ------------------------------------------------------------------ result banner
 export function headlineFor(result) {

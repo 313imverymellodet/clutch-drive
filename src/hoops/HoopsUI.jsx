@@ -24,7 +24,7 @@ export function HoopsBug({ g, you, them, shotClock = null }) {
         <span className="bug-team" style={{ background: you.jersey, color: '#fff' }}>
           <TeamLogo abbr={you.abbr} league="nba" size={18} className="bug-logo" />
           {you.abbr}
-          {g.poss === 'you' && <span className="bug-poss" aria-label="Your ball">●</span>}
+          {g.poss === 'you' && <span className="bug-poss" role="img" aria-label="Your ball">●</span>}
         </span>
         <span className="bug-score">{g.scoreYou}</span>
         <span className={`bug-clock${late ? ' late' : ''}`}>
@@ -35,13 +35,13 @@ export function HoopsBug({ g, you, them, shotClock = null }) {
         <span className="bug-team" style={{ background: them.jersey, color: '#fff' }}>
           <TeamLogo abbr={them.abbr} league="nba" size={18} className="bug-logo" />
           {them.abbr}
-          {g.poss === 'them' && <span className="bug-poss" aria-label="Their ball">●</span>}
+          {g.poss === 'them' && <span className="bug-poss" role="img" aria-label="Their ball">●</span>}
         </span>
       </div>
       <div className="bug-sub">
         <span>{g.poss === 'you' ? 'Your ball' : 'Their ball'}{g.inbound > 0 ? ' · backcourt' : ' · frontcourt'}</span>
-        {g.log.length > 0 && <span className="bug-strip" aria-label="Possessions so far">{g.log.slice(-8).map((p) => p.emoji).join('')}</span>}
-        <span className="bug-tos" aria-label={`${g.timeouts} timeouts left`}>
+        {g.log.length > 0 && <span className="bug-strip" role="img" aria-label="Possessions so far">{g.log.slice(-8).map((p) => p.emoji).join('')}</span>}
+        <span className="bug-tos" role="img" aria-label={`${g.timeouts} timeouts left`}>
           {[0, 1].map((i) => (
             <i key={i} className={i < g.timeouts ? 'on' : ''} />
           ))}
