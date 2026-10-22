@@ -6,7 +6,7 @@ import { NBA_BY_ABBR } from '../hoops/teams'
 import { aiCoverage, aiSet, aiWillFoul, applyFoul, applyPossession, boostsFor, fmtClock, makeScenario, newGame, possRng, possSeed, shareText, startPossession, winProb } from '../hoops/game'
 import { hoopsSound, hsfx, setChant } from '../hoops/sound'
 import { CoveragePicker, FreeThrows, HoopsBug, HoopsControls, NbaTeamSelect, SetPicker, hoopsHeadline } from '../hoops/HoopsUI'
-import { ShareButton, WPChart, WinProbMeter } from '../ui/GameUI'
+import { Countdown, ShareButton, WPChart, WinProbMeter } from '../ui/GameUI'
 import { HOOPS_DATA_CREDIT, HOOPS_DATA_URL, hoopsMomentForDay, hoopsMomentLabel, hoopsRealOutcome, scenarioFromHoopsMoment } from '../hoops/moments'
 import { TeamLogo } from '../game/real'
 import { dayNumber, todayKey } from '../game/drive'
@@ -214,11 +214,18 @@ export default function Hoops({ mode: rawMode }) {
   useEffect(() => {
     if (stage !== 'over' || g.status === 'playing' || finished.current === g.id) return
     finished.current = g.id
-    if (mode === 'daily' && !load(`cd.hoops.${dateKey}`, null)) save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: `${SITE}/hoops`, mode }), grid: g.log.map((p) => p.emoji).join('') })
+    if (mode === 'daily' && !load(`cd.hoops.${dateKey}`, null)) {
+      save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: `${SITE}/hoops`, mode, moment: scenario.moment }), grid: g.log.map((p) => p.emoji).join('') })
+      // daily stats: played, wins, streak (a streak needs yesterday's game too)
+      const st = load('cd.hoops.stats', { last: null, streak: 0, played: 0, wins: 0 })
+      const won = g.status === 'won'
+      const yesterday = todayKey(new Date(Date.now() - 86400000))
+      save('cd.hoops.stats', { last: dateKey, played: st.played + 1, wins: st.wins + (won ? 1 : 0), streak: won ? (st.last === yesterday ? st.streak + 1 : 1) : 0 })
+    }
     setChant(false)
     hsfx.horn()
     if (g.status === 'won') setTimeout(() => hsfx.theme(), 1600)
-  }, [stage, g, mode, dateKey, day])
+  }, [stage, g, mode, dateKey, day]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const newPractice = (teams = {}) => {
     const p = { ...practice, ...teams, n: practice.n + 1 }
@@ -372,7 +379,13 @@ function defTip(g) {
 
 function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
   const won = g ? g.status === 'won' : saved?.status === 'won'
-  const text = g ? shareText(g, { day, url: `${SITE}/hoops`, mode }) : saved?.text
+  const text = g ? shareText(g, { day, url: `${SITE}/hoops`, mode, moment }) : saved?.text
+  // stats are saved by the parent right after this mounts, so re-read them a beat later
+  const [stats, setStats] = useState(() => load('cd.hoops.stats', { played: 0, wins: 0, streak: 0 }))
+  useEffect(() => {
+    const id = setTimeout(() => setStats(load('cd.hoops.stats', { played: 0, wins: 0, streak: 0 })), 50)
+    return () => clearTimeout(id)
+  }, [])
   return (
     <div className="modal-wrap">
       <div className={`modal ${won ? 'won' : 'lost'}`}>
@@ -389,12 +402,20 @@ function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
         {g && <WPChart trail={[g.wp0, ...g.log.map((p) => p.wp), won ? 1 : 0]} />}
         {moment && <HoopsHistory m={moment} won={won} />}
         <p className="fine">🟩 bucket · 💦 three · 🎯 free throws · 🟥 empty · 🔒 stop · 🟧 they scored</p>
+        {mode === 'daily' && (
+          <div className="stats">
+            <div><b>{stats.played}</b><span>Played</span></div>
+            <div><b>{stats.played ? Math.round((100 * stats.wins) / stats.played) : 0}%</b><span>Win rate</span></div>
+            <div><b>{stats.streak}</b><span>Streak</span></div>
+          </div>
+        )}
         <div className="modal-actions">
           {text && <ShareButton text={text} />}
           <button className="btn" onClick={onAgain}>{mode === 'daily' ? 'Practice' : 'New game'}</button>
-          <button className="btn" onClick={() => navigate('/play?mode=daily')}>🏈 Clutch Drive</button>
+          <button className="btn" onClick={() => navigate('/play?mode=daily')}>🏈 Today’s Daily Drive</button>
         </div>
-        <p className="fine"><Link to="/">← Home</Link></p>
+        {mode === 'daily' && <p className="fine">Next game in <Countdown /></p>}
+        <p className="fine"><Link to="/">← Home</Link> · <Link to="/how-to-play#hoops">Tips</Link></p>
       </div>
     </div>
   )

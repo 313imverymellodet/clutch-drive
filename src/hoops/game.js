@@ -239,13 +239,18 @@ export const fmtClock = (s) => {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
-export function shareText(g, { day, url, mode }) {
+export function shareText(g, { day, url, mode, moment = null }) {
   const won = g.status === 'won'
   const title = mode === 'daily' ? `🏀 Clutch Hoops #${day}` : '🏀 Clutch Hoops'
   const line = `${g.you} ${g.scoreYou}–${g.scoreThem} ${g.them} ${won ? '✅' : '❌'}${g.ot ? ' (OT)' : ''}`
   const grid = g.log.map((p) => p.emoji).join('')
   const lo = Math.min(g.wp0, ...g.log.map((p) => p.wp ?? 1))
-  return `${title}\n${line}\n${grid}\n📈 Win prob ${Math.round(g.wp0 * 100)}%${lo < g.wp0 - 0.05 ? ` (low ${Math.round(lo * 100)}%)` : ''} → ${won ? 100 : 0}%\n${url ?? ''}`.trim()
+  let history = ''
+  if (moment) {
+    const realWon = moment.won === 1
+    history = `\n📅 Real ${moment.date?.slice(0, 4) ?? ''}: ${realWon ? 'they won' : 'they lost'} · ${won && !realWon ? 'I beat history 🔥' : won ? 'matched history' : realWon ? 'history wins this one' : 'same as history'}`
+  }
+  return `${title}\n${line}\n${grid}\n📈 Win prob ${Math.round(g.wp0 * 100)}%${lo < g.wp0 - 0.05 ? ` (low ${Math.round(lo * 100)}%)` : ''} → ${won ? 100 : 0}%${history}\n${url ?? ''}`.trim()
 }
 
 export const SET_LABEL = (id) => SETS[id]?.label ?? id
