@@ -5,6 +5,7 @@ import { FAMILIES } from '../sim/playbook'
 import { isMuted, onMuteChange, setMuted, sfx, unlock } from '../game/sound'
 import { downAndDistance, fmtBallOn, fmtClock, QUARTER_LABEL } from '../game/drive'
 import { TeamLogo } from '../game/real'
+import { trackEvent } from '../analytics'
 
 // ------------------------------------------------------------------ scorebug
 export function Scorebug({ drive, offense, defense, clock, running }) {
@@ -217,12 +218,14 @@ export function DriveStrip({ plays }) {
 }
 
 // ------------------------------------------------------------------ share
-export function ShareButton({ text, label = 'Share result' }) {
+export function ShareButton({ text, label = 'Share result', event = null }) {
   const [copied, setCopied] = useState(false)
   const share = async () => {
+    const sent = (method) => event && trackEvent('share', { mode: event, method })
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
         await navigator.share({ text })
+        sent('native')
         return
       }
     } catch {
@@ -230,9 +233,11 @@ export function ShareButton({ text, label = 'Share result' }) {
     }
     try {
       await navigator.clipboard.writeText(text)
+      sent('clipboard')
       setCopied(true)
       setTimeout(() => setCopied(false), 1800)
     } catch {
+      sent('prompt')
       window.prompt('Copy your result:', text)
     }
   }

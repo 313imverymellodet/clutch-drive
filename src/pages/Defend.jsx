@@ -15,6 +15,7 @@ import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sou
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
 import { rosterFor, useRealData } from '../game/real'
+import { resultOf, trackEvent } from '../analytics'
 
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 const AI_HUDDLE = 12 // seconds a running clock burns while their offense lines up
@@ -114,6 +115,7 @@ export default function Defend({ daily: isDaily }) {
     startAmbience()
     sfx.whistle(0.25)
     setStage('call')
+    trackEvent('game_start', { mode: isDaily ? 'defense-daily' : 'defense' })
   }
 
   const lock = () => {
@@ -203,6 +205,7 @@ export default function Defend({ daily: isDaily }) {
   useEffect(() => {
     if (stage !== 'over' || drive.status === 'playing' || finished.current === scenario.id) return
     finished.current = scenario.id
+    trackEvent('game_end', { mode: isDaily ? 'defense-daily' : 'defense', result: resultOf(youWon) })
     if (!isDaily) {
       const streak = youWon ? prefs.streak + 1 : 0
       const nextPrefs = { ...prefs, streak, best: Math.max(prefs.best, streak) }
@@ -327,6 +330,7 @@ export default function Defend({ daily: isDaily }) {
             )}
             <div className="modal-actions">
               <ShareButton
+                event={isDaily ? 'defense-daily' : 'defense'}
                 text={`${BRAND.name} 🛡️ ${isDaily ? `#${day} defense` : 'Defense'}\n${you.abbr} ${drive.scoreDef}–${drive.scoreOff} ${them.abbr} ${youWon ? '✅ held on' : '❌ gave it up'}\n${grid}\n${SITE}/play?mode=defense`}
               />
               <button className="btn" onClick={replay}>↺ Replay last play</button>
