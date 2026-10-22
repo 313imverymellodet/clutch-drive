@@ -168,7 +168,13 @@ export function shareMeta(r) {
   const head = r.mode === 'daily' && r.day ? `${r.sport.name} #${r.day}` : r.mode === 'survivor' ? `${r.sport.name} Survivor` : r.sport.name
   const title = `${head}: ${r.you.abbr} ${r.scoreYou}–${r.scoreThem} ${r.them.abbr} ${r.won ? '✅' : '❌'}${r.ot ? ' (OT)' : ''}`
   const v = verdict(r)
-  const how = r.won ? (r.clockLeft != null ? `Won it with ${fmtClock(r.clockLeft)} left.` : 'Won it.') : r.reason ? `${r.reason}.` : 'Came up short.'
+  const how = r.won
+    ? r.clockLeft != null
+      ? `Won it with ${fmtClock(r.clockLeft)} left.`
+      : `Closed it out${r.ot ? ' in OT' : ''}.`
+    : r.reason
+      ? `${r.reason}.`
+      : 'Came up short.'
   const real = v ? ` Real ${r.real.year}: ${r.real.won ? 'they won' : 'they lost'}, ${v.line}.` : ''
   const cta = r.s === 'h' ? 'Can you win today’s real NBA ending?' : 'Can you win today’s real NFL comeback drive?'
   return { title, description: `${how}${real} ${cta}`, alt: `${r.you.city} ${r.you.name} ${r.scoreYou}, ${r.them.city} ${r.them.name} ${r.scoreThem}` }
