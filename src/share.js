@@ -50,11 +50,12 @@ export function driveResultUrl(origin, d, { mode, day, streak }) {
 }
 
 /** The result link for a hoops game (game state from src/hoops/game.js). */
-export function hoopsResultUrl(origin, g, { mode, day, moment }) {
+export function hoopsResultUrl(origin, g, { mode, day, moment, streak = 0 }) {
   return resultUrl(origin, {
     s: 'h',
     m: mode,
     n: mode === 'daily' ? day : null,
+    k: mode === 'survivor' && streak > 0 ? streak : null,
     a: g.you,
     b: g.them,
     x: `${g.scoreYou}-${g.scoreThem}`,
@@ -182,6 +183,6 @@ export function shareMeta(r) {
 
 /** Where a visitor goes after the preview: the Daily for that sport (Survivor shares go to Survivor). */
 export function playPath(r) {
-  if (r.s === 'h') return '/hoops'
+  if (r.s === 'h') return r.mode === 'survivor' ? '/hoops?mode=survivor' : '/hoops'
   return r.mode === 'survivor' ? '/play?mode=survivor' : '/play?mode=daily'
 }

@@ -9,6 +9,7 @@ import { BlobShadow, Football } from '../components/Props'
 import { RouteArt } from '../components/RouteArt'
 import { LiveRings } from '../components/LiveRings'
 import { FIXED_DT, LOS } from '../sim/playSim'
+import { getSettings, reducedMotion } from '../game/settings'
 
 const focus = new THREE.Vector3(0, 0, LOS + 5)
 
@@ -48,6 +49,7 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
   const shadowRefs = useRef([])
   const lastStatus = useRef('')
   const acc = useRef(0)
+  const impact = useRef({ freeze: 0, shake: 0 }) // hit-stop and camera shake on big hits (cosmetic)
   const [crowd, setCrowd] = useState(CALM)
   const mood = useMemo(() => ({ ...crowd, lights: night ? 0.7 : 0 }), [crowd, night])
 
@@ -75,6 +77,12 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
 
   const tickRef = useRef()
   tickRef.current = (dt, rawDt) => {
+    // a big hit freezes the frame for a blink: the sim just runs slower for ~0.1 s (results don't change)
+    const hit = impact.current
+    if (hit.freeze > 0) {
+      hit.freeze -= rawDt
+      dt *= 0.12
+    }
     // fixed-step sim keeps plays repeatable (instant replay re-runs the same seed)
     acc.current += dt
     while (acc.current >= FIXED_DT) {
@@ -108,10 +116,21 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
     }
 
     updateCamera(sim, camera, size, rawDt)
+    if (hit.shake > 0.001) {
+      camera.position.x += (Math.random() - 0.5) * hit.shake
+      camera.position.y += (Math.random() - 0.5) * hit.shake * 0.6
+      hit.shake *= Math.exp(-rawDt * 14)
+    }
 
     // sim events (snap, catch, tackle, ...) go to the UI for sound and feedback
     if (sim.events.length) {
       const evs = sim.events.splice(0)
+      if (!reducedMotion() && sim.timeScale < 2) {
+        for (const e of evs) {
+          if (e.type === 'sack' || e.type === 'brokenTackle' || e.type === 'interception') (hit.freeze = 0.1), (hit.shake = 0.5)
+          else if (e.type === 'tackle') hit.shake = Math.max(hit.shake, 0.28)
+        }
+      }
       if (onEvent) evs.forEach(onEvent)
     }
 
@@ -186,6 +205,18 @@ function updateCamera(sim, camera, size, rawDt) {
     camera.fov = fov
     camera.updateProjectionMatrix()
   }
+  const view = getSettings().camera
+  const c = sim.carrier
+  if (sim.camMode !== 'close' && sim.result?.kind === 'touchdown' && c && (sim.phase === 'dead' || sim.phase === 'over') && !reducedMotion()) {
+    // celebration cam: swing around the scorer while he celebrates
+    const since = sim.t - (sim.deadTime ?? sim.t)
+    const a = Math.PI * 0.85 + since * 0.55
+    focus.lerp(tmpTarget.set(c.pos.x, 0, c.pos.z), Math.min(1, rawDt * 3))
+    camGoal.set(focus.x + Math.sin(a) * 7.5, 3.4, focus.z + Math.cos(a) * 7.5)
+    camera.position.lerp(camGoal, Math.min(1, rawDt * 2.2))
+    camera.lookAt(focus.x, 1.1, focus.z)
+    return
+  }
   if (sim.camMode === 'close') {
     // replay-style close-up that rides with the ball
     focus.lerp(tmpTarget.set(b.pos.x, 0, b.pos.z), Math.min(1, rawDt * 4))
@@ -197,9 +228,11 @@ function updateCamera(sim, camera, size, rawDt) {
     const pull = THREE.MathUtils.clamp(1.45 / aspect, 1, 1.5)
     // pre-snap, aim past the formation so it sits above the play-call card
     const presnap = sim.phase === 'presnap'
+    // camera setting: broadcast, All-22 (high and back: see every route), field level (low and close)
+    const [h, back, lookY] = { high: [presnap ? 25 : 22, presnap ? 14 : 12, 0], field: [presnap ? 6.5 : 5.5, presnap ? 15 : 12, 1.4] }[view] ?? [presnap ? 15 : 12, presnap ? 21 : 17, 0]
     focus.lerp(tmpTarget.set(b.pos.x * 0.5, 0, b.pos.z + (presnap ? -7 : 5)), Math.min(1, rawDt * 2.2))
-    camGoal.set(focus.x * 0.4, (presnap ? 15 : 12) * pull, focus.z - (presnap ? 21 : 17) * pull)
+    camGoal.set(focus.x * 0.4, h * pull, focus.z - back * pull)
     camera.position.lerp(camGoal, Math.min(1, rawDt * 2.5))
-    camera.lookAt(focus.x, 0, focus.z + 1)
+    camera.lookAt(focus.x, lookY, focus.z + 1)
   }
 }

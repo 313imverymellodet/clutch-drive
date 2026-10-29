@@ -1,4 +1,6 @@
 import { load, save } from './storage'
+import { getSettings, onSettings } from './settings'
+import { HAPTIC, haptic } from './haptics'
 
 /*
  * Tiny synthesized sound kit (WebAudio, no files): whistle, hits, catches, crowd.
@@ -11,12 +13,14 @@ let noiseBuf = null
 let ambience = null
 let muted = load('cd.muted', false)
 const listeners = new Set()
+const level = () => (muted ? 0 : getSettings().volume)
+onSettings(() => master && master.gain.setTargetAtTime(level(), ctx.currentTime, 0.05))
 
 export const isMuted = () => muted
 export function setMuted(m) {
   muted = m
   save('cd.muted', m)
-  if (master) master.gain.setTargetAtTime(m ? 0 : 0.9, ctx.currentTime, 0.05)
+  if (master) master.gain.setTargetAtTime(level(), ctx.currentTime, 0.05)
   listeners.forEach((fn) => fn(m))
 }
 export function onMuteChange(fn) {
@@ -33,7 +37,7 @@ export function unlock() {
       if (!AC) return
       ctx = new AC()
       master = ctx.createGain()
-      master.gain.value = muted ? 0 : 0.9
+      master.gain.value = level()
       master.connect(ctx.destination)
       ctx.onstatechange = flushPending
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate)
@@ -333,20 +337,25 @@ export function playEvent(e) {
       return sfx.throw()
     case 'catch':
     case 'handoff':
+      haptic(HAPTIC.tap)
       return sfx.catch()
     case 'firstDown':
       return sfx.cheer(1)
     case 'tackle':
+      haptic(HAPTIC.hit)
       sfx.hit()
       return setTimeout(() => sfx.whistle(), 250)
     case 'brokenTackle':
+      haptic(HAPTIC.hit)
       sfx.hit()
       return sfx.cheer(0.6)
     case 'sack':
+      haptic(HAPTIC.big)
       sfx.hit(true)
       sfx.groan()
       return setTimeout(() => sfx.whistle(), 300)
     case 'interception':
+      haptic(HAPTIC.miss)
       sfx.groan()
       return setTimeout(() => sfx.whistle(), 400)
     case 'incomplete':
@@ -357,6 +366,7 @@ export function playEvent(e) {
     case 'pump':
       return sfx.click()
     case 'move':
+      haptic(HAPTIC.tap)
       return sfx.cheer(0.4)
     case 'slide':
       return setTimeout(() => sfx.whistle(), 200)
@@ -364,6 +374,7 @@ export function playEvent(e) {
       sfx.hit()
       return setTimeout(() => sfx.whistle(0.3), 250)
     case 'touchdown':
+      haptic(HAPTIC.score)
       sfx.whistle(0.5)
       return sfx.cheer(2)
     default:

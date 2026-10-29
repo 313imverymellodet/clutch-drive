@@ -10,6 +10,7 @@ import { FieldBar, Scorebug, ShareButton, WPChart, WinProbMeter, wpTrail } from 
 import { winProb } from '../game/winprob'
 import { momentForDay } from '../game/moments'
 import { isNightGame } from '../components/Stadium'
+import { Confetti } from '../ui/Confetti'
 import { TeamSelect } from '../ui/TeamSelect'
 import { DefensePicker } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
@@ -316,6 +317,7 @@ export default function Defend({ daily: isDaily }) {
 
       {stage === 'over' && (
         <div className="modal-wrap">
+          {youWon && <Confetti />}
           <div className={`modal ${youWon ? 'won' : 'lost'}`}>
             <div className="modal-emoji">{youWon ? '🛡️' : '💀'}</div>
             <h2>{youWon ? 'You held on!' : 'They scored.'}</h2>

@@ -5,6 +5,7 @@ import { Link, useRoute } from './router'
 import { BRAND } from './brand'
 import { Logo } from './ui/Logo'
 import { MuteButton } from './ui/MuteButton'
+import { SettingsButton } from './ui/Settings'
 import { applyMeta } from './seo'
 
 const Game = lazy(() => import('./pages/Game'))
@@ -23,7 +24,7 @@ export default function App() {
     // the mode pages share one HTML file and canonical URL; give them their own tab title
     const title =
       path === '/play' && modeParam && modeParam !== 'daily' ? `${MODE_LABEL[modeParam] ?? 'Practice'} | ${BRAND.name}`
-        : path === '/hoops' && modeParam === 'practice' ? 'Practice | Clutch Hoops'
+        : path === '/hoops' && (modeParam === 'practice' || modeParam === 'survivor') ? `${modeParam === 'practice' ? 'Practice' : 'Survivor'} | Clutch Hoops`
           : null
     applyMeta(path, title)
   }, [path, modeParam])
@@ -97,7 +98,7 @@ function Shell({ title, mode, children }) {
         <div className="top-right">
           <nav className="tabs" ref={tabs}>
             {mode?.startsWith('hoops')
-              ? [['hoops-daily', 'Daily', '/hoops?mode=daily'], ['hoops-practice', 'Practice', '/hoops?mode=practice'], ['nfl', '🏈 Football', '/play?mode=daily']].map(([m, label, to]) => (
+              ? [['hoops-daily', 'Daily', '/hoops?mode=daily'], ['hoops-survivor', 'Survivor', '/hoops?mode=survivor'], ['hoops-practice', 'Practice', '/hoops?mode=practice'], ['nfl', '🏈 Football', '/play?mode=daily']].map(([m, label, to]) => (
                   <Link key={m} to={to} className={mode === m ? 'on' : ''}>{label}</Link>
                 ))
               : ['daily', 'survivor', 'practice', 'defense', 'h2h', 'hoops'].map((m) => (
@@ -107,6 +108,7 @@ function Shell({ title, mode, children }) {
                 ))}
           </nav>
           {mode && <MuteButton />}
+          {mode && <SettingsButton sport={mode.startsWith('hoops') ? 'hoops' : 'football'} />}
         </div>
       </header>
       <div className="stage" aria-label={title}>{children}</div>

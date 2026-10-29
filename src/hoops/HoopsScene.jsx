@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import { HOOPS_MODEL_URL, SKIN_TONES, buildHoopsCharacter, handWorld, hoopsLook } from '../three/characters'
+import { getSettings, reducedMotion } from '../game/settings'
 import { FIXED_DT, RIM_HEIGHT } from './sim'
 import { HOOP } from './sets'
 import { hoopsUniform, numberStyle } from './teams'
@@ -428,8 +429,18 @@ function updateCamera(sim, camera, size, rawDt) {
   // broadcast: high above half court looking down at the floor, drifting with the ball; portrait pulls back
   const pull = THREE.MathUtils.clamp(1.4 / aspect, 1, 1.75)
   const b = sim.ball
+  const s = sim.shot
+  if ((sim.phase === 'dead' || sim.phase === 'over') && sim.result?.points > 0 && s?.shooter && (s.three || s.shooter.dunk || s.buzzer) && !reducedMotion()) {
+    // a big bucket: push in on the shooter while he holds the follow-through (or flexes after the dunk)
+    const p = s.shooter.pos
+    focus.lerp(camGoal.set(p.x, 0, p.z), Math.min(1, rawDt * 2))
+    camGoal.set(focus.x * 0.7, 13 * pull, focus.z + 22 + (pull - 1) * 12)
+    camera.position.lerp(camGoal, Math.min(1, rawDt * 1.6))
+    camera.lookAt(focus.x, 4, focus.z)
+    return
+  }
   const bz = Math.min(32, b.pos.z)
-  const [H, D, LZ, LY] = CAM
+  const [H, D, LZ, LY] = { low: [17, 52, 13, 5], high: [54, 38, 14, 0] }[getSettings().hoopsCamera] ?? CAM
   focus.lerp(camGoal.set(b.pos.x * 0.3, 0, LZ + bz * 0.2), Math.min(1, rawDt * 2))
   camGoal.set(focus.x * 0.5, H * pull, D + (pull - 1) * 30)
   camera.position.lerp(camGoal, Math.min(1, rawDt * 2.5))

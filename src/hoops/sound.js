@@ -1,4 +1,5 @@
 import { loopClip, playClip, sfx } from '../game/sound'
+import { HAPTIC, haptic } from '../game/haptics'
 
 /*
  * Basketball sounds (Viewmax clips, public/sounds/hoops-*.m4a) with synth fallbacks. The crowd belongs to the
@@ -64,17 +65,21 @@ export function hoopsSound(e, { youOffense, youHome }) {
     case 'pass':
       return sfx.click()
     case 'release':
+      if (e.grade === 'perfect') haptic(HAPTIC.tap)
       return e.grade === 'perfect' ? sfx.click() : null
     case 'make':
     case 'three':
+      haptic(e.type === 'three' ? HAPTIC.score : HAPTIC.hit)
       hsfx.swish()
       return setTimeout(() => (homeOffense ? hsfx.roar(e.type === 'three' ? 1 : 0.6) : hsfx.ooh(0.6)), 120)
     case 'rim':
       hsfx.clank()
       return setTimeout(() => (homeOffense ? hsfx.ooh(0.9) : hsfx.roar(0.45)), 150)
     case 'steal':
+      haptic(HAPTIC.big)
       return homeOffense ? hsfx.ooh(0.8) : hsfx.roar(0.8)
     case 'buzzer':
+      haptic(HAPTIC.big)
       return hsfx.horn()
     case 'whistle':
       return hsfx.whistle()

@@ -634,3 +634,22 @@ a { color: inherit; }
 .faq { background: #fff; border: 2.5px solid var(--ink); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; }
 .faq summary { font-weight: 900; cursor: pointer; }
 .faq p { margin: 8px 0 2px; }
+
+/* ------------------------------------------------------------------ v2: settings sheet */
+.settings-wrap { position: relative; flex-shrink: 0; }
+.settings-sheet {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 260px;
+  background: #fff; color: var(--ink); border-radius: 16px; padding: 12px 14px 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  display: grid; gap: 10px; font-size: 14px; font-weight: 700;
+}
+.settings-title { font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.set-row.col { flex-direction: column; align-items: stretch; gap: 6px; }
+.set-row small { display: block; font-weight: 600; font-size: 11px; color: #6b7280; }
+.set-row input[type='checkbox'] { width: 20px; height: 20px; accent-color: var(--accent); }
+.set-row input[type='range'] { width: 130px; accent-color: var(--accent); }
+.seg { display: flex; background: #eef0f3; border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { flex: 1; border: 0; background: transparent; border-radius: 999px; padding: 6px 4px; font-weight: 800; font-size: 12px; color: #4b5563; cursor: pointer; }
+.seg button.on { background: var(--ink); color: #fff; }
+.confetti { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 40; }

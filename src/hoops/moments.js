@@ -21,6 +21,16 @@ const ORDER = (() => {
   return idx
 })()
 
+/** Survivor: each win digs into tougher real endings (lower real win probability). */
+const BY_WP = [...HOOPS_MOMENTS].sort((a, b) => b.wp - a.wp)
+export function hoopsMomentForSurvivor(runId, game) {
+  const rnd = rngFrom(`hoops-surv-${runId}-${game}`)
+  const band = Math.min(0.85, game * 0.12)
+  const start = Math.floor(band * BY_WP.length)
+  const span = Math.max(20, Math.floor(BY_WP.length * 0.25))
+  return BY_WP[Math.min(BY_WP.length - 1, start + Math.floor(rnd() * span))]
+}
+
 export function hoopsMomentForDay(dateKey) {
   return HOOPS_MOMENTS[ORDER[(dayNumber(dateKey) - 1) % ORDER.length]]
 }
