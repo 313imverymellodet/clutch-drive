@@ -32,6 +32,7 @@ import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sou
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
 import { captureCanvasProps } from '../capture'
+import { isNightGame } from '../components/Stadium'
 import { resultOf, trackEvent } from '../analytics'
 
 const SPIKE_RUNOFF = 3 // seconds to hustle to the line and clock it
@@ -314,6 +315,7 @@ export default function Game({ mode: rawMode }) {
             onEvent={playEvent}
             preview={stage === 'call' ? preview : null}
             liveControls={stage === 'live' && !replaying}
+            night={isNightGame(scenario.moment) || (import.meta.env.DEV && new URLSearchParams(location.search).has('night'))}
             los={inPlay ? sim.los : los}
             firstDown={inPlay ? (sim.firstDown >= 50 ? null : sim.firstDown) : firstDownZ >= 50 ? null : firstDownZ}
           />

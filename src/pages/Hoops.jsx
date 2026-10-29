@@ -271,6 +271,7 @@ export default function Hoops({ mode: rawMode }) {
             onStatus={onStatus}
             onEvent={(e) => hoopsSound(e, { youOffense, youHome: scenario.youHome })}
             tension={tension}
+            distract={stage === 'ft' && !scenario.youHome}
             board={homeOnDefense && (stage === 'live' || stage === 'call' || stage === 'defcall') && tense ? 'DEFENSE' : ''}
             controls={live && !replaying && youOffense}
             onPass={(key) => sim.input({ type: 'pass', key })}

@@ -1,7 +1,9 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useMemo } from 'react'
 import * as THREE from 'three'
-import { useFrame } from '@react-three/fiber'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { SKIN_TONES } from '../three/characters'
+import { Crowd, seatRng, waveAt } from '../three/crowd'
+import { Jumbotron, Ribbon } from '../three/boards'
 
 // Low-poly bowl around the field. Units are yards; field spans x ±26.7, z ±60.
 const ROWS = 14
@@ -9,6 +11,7 @@ const ROW_DEPTH = 1.25
 const ROW_RISE = 0.8
 const SIDE_X = 34 // first row of sideline stands
 const END_Z = 66 // first row of end-zone stands
+const FAN_SCALE = 0.3 // the shared chibi fans are built in feet-ish units
 
 /** Stepped seating as one merged geometry (cheap: a single draw call). */
 function useSeatingGeometry() {
@@ -31,69 +34,53 @@ function useSeatingGeometry() {
   }, [])
 }
 
-/** Fans: one InstancedMesh. Bounce happens in the vertex shader, so cheering costs nothing on the CPU. */
-function Crowd({ home, away, excited }) {
-  const ref = useRef()
-  const uniforms = useRef({ uTime: { value: 0 }, uExcite: { value: 0 } })
-
-  const seats = useMemo(() => {
-    const out = []
-    let seed = 7
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647)
-    for (let i = 0; i < ROWS; i++) {
-      const y = 1.6 + i * ROW_RISE + 0.35
-      for (const sx of [-1, 1]) {
-        for (let z = -62; z <= 62; z += 0.95) if (rnd() > 0.12) out.push([sx * (SIDE_X + i * ROW_DEPTH), y, z + rnd() * 0.3, rnd()])
-      }
-      for (const sz of [-1, 1]) {
-        for (let x = -33; x <= 33; x += 0.95) if (rnd() > 0.12) out.push([x + rnd() * 0.3, y, sz * (END_Z + i * ROW_DEPTH), rnd()])
-      }
-    }
-    return out
-  }, [])
-
-  const geometry = useMemo(() => new THREE.CapsuleGeometry(0.24, 0.32, 2, 6), [])
-  const material = useMemo(() => {
-    const m = new THREE.MeshLambertMaterial()
-    m.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, uniforms.current)
-      shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uExcite;')
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-          float ph = float(gl_InstanceID) * 1.731;
-          transformed.y += uExcite * abs(sin(uTime * 9.0 + ph)) * 0.55 + 0.04 * sin(uTime * 2.0 + ph);`,
-        )
-    }
-    return m
-  }, [])
-
-  useLayoutEffect(() => {
-    const mesh = ref.current
-    const m = new THREE.Matrix4()
-    const c = new THREE.Color()
-    const homeCols = [home.jersey, home.stripe, home.jersey, home.helmet]
-    const awayCols = [away.jersey, away.stripe]
-    seats.forEach(([x, y, z, r], i) => {
-      m.makeTranslation(x, y, z)
-      mesh.setMatrixAt(i, m)
-      // ~70% home fans, a few neutral shirts
-      const pool = r < 0.7 ? homeCols : r < 0.93 ? awayCols : ['#e8e4da', '#3b3b3b']
-      c.set(pool[Math.floor((r * 997) % pool.length)])
-      mesh.setColorAt(i, c)
+/**
+ * Every seat: home colors most of the bowl, a visitors' section in the far end-zone corner, signs here and there.
+ * `wave` is the seat's position around the bowl so the wave can travel.
+ */
+function seatLayout(home, away) {
+  const fans = []
+  const r = seatRng(7)
+  const homeShirts = [home.jersey, home.jersey, home.stripe, home.helmet, '#f4f4f4', home.jersey]
+  const awayShirts = [away.jersey, away.stripe, away.jersey]
+  let k = 0
+  const add = (x, z, row, yaw) => {
+    if (r() < 0.07) return
+    const visitor = z > END_Z - 1 && x > 8 && r() < 0.85
+    fans.push({
+      x, y: 1.6 + row * ROW_RISE, z, yaw,
+      shirt: visitor ? awayShirts[k++ % awayShirts.length] : r() < 0.06 ? '#3b3b3b' : homeShirts[k++ % homeShirts.length],
+      skin: SKIN_TONES[Math.floor(r() * SKIN_TONES.length)],
+      phase: r(), side: visitor ? 0 : 1, zone: 0, wave: waveAt(x, z),
+      sign: r() < 0.03, scale: FAN_SCALE * (0.9 + r() * 0.2),
     })
-    mesh.instanceMatrix.needsUpdate = true
-    mesh.instanceColor.needsUpdate = true
-  }, [seats, home, away])
+  }
+  for (let row = 0; row < ROWS; row++) {
+    const off = (row % 2) * 0.5
+    for (const sx of [-1, 1]) {
+      for (let z = -62; z <= 62; z += 1.05) add(sx * (SIDE_X + row * ROW_DEPTH), z + off, row, sx > 0 ? -Math.PI / 2 : Math.PI / 2)
+    }
+    for (const sz of [-1, 1]) {
+      for (let x = -32.5; x <= 32.5; x += 1.05) add(x + off, sz * (END_Z + row * ROW_DEPTH), row, sz > 0 ? Math.PI : 0)
+    }
+  }
+  return fans
+}
 
-  useFrame((state, dt) => {
-    const u = uniforms.current
-    u.uTime.value = state.clock.elapsedTime
-    u.uExcite.value = THREE.MathUtils.damp(u.uExcite.value, excited ? 1 : 0, 3, dt)
-  })
-
-  return <instancedMesh ref={ref} args={[geometry, material, seats.length]} />
+/** Both teams on their sidelines between the 30s: helmets on, standing, reacting with their own fans. */
+function benchLayout(home, away) {
+  const out = []
+  const r = seatRng(31)
+  for (const [team, sx, side] of [[home, -1, 1], [away, 1, 0]]) {
+    for (let i = 0; i < 26; i++) {
+      const z = -20 + i * 1.55 + r() * 0.5
+      out.push({
+        x: sx * (30.2 + (i % 3) * 0.7), y: 0, z, yaw: sx > 0 ? -Math.PI / 2 : Math.PI / 2,
+        shirt: team.jersey, skin: team.helmet, phase: r(), side, zone: 0, wave: 0, sign: false, scale: 0.42,
+      })
+    }
+  }
+  return out
 }
 
 function Goalpost({ z }) {
@@ -122,12 +109,38 @@ function Goalpost({ z }) {
   )
 }
 
-function LightTower({ x, z }) {
+/** Orange pylons on the four corners of each end zone. */
+function Pylons() {
+  const spots = []
+  for (const z of [50, 60, -50, -60]) for (const x of [-26.85, 26.85]) spots.push([x, z])
+  return spots.map(([x, z]) => (
+    <mesh key={`${x}${z}`} position={[x, 0.32, z]}>
+      <boxGeometry args={[0.28, 0.64, 0.28]} />
+      <meshToonMaterial color="#ff6a13" />
+    </mesh>
+  ))
+}
+
+const glowTexture = (() => {
+  if (typeof document === 'undefined') return null
+  const c = document.createElement('canvas')
+  c.width = c.height = 128
+  const g = c.getContext('2d')
+  const grad = g.createRadialGradient(64, 64, 4, 64, 64, 64)
+  grad.addColorStop(0, 'rgba(255,250,225,1)')
+  grad.addColorStop(0.25, 'rgba(255,245,200,0.55)')
+  grad.addColorStop(1, 'rgba(255,240,190,0)')
+  g.fillStyle = grad
+  g.fillRect(0, 0, 128, 128)
+  return new THREE.CanvasTexture(c)
+})()
+
+function LightTower({ x, z, night }) {
   return (
     <group position={[x, 0, z]} rotation-y={Math.atan2(-x, -z)}>
       <mesh position={[0, 16, 0]}>
         <cylinderGeometry args={[0.35, 0.6, 32, 6]} />
-        <meshLambertMaterial color="#9aa3ad" />
+        <meshLambertMaterial color={night ? '#4b525e' : '#9aa3ad'} />
       </mesh>
       <mesh position={[0, 32.5, 0.4]}>
         <boxGeometry args={[6, 3, 0.6]} />
@@ -135,17 +148,28 @@ function LightTower({ x, z }) {
       </mesh>
       <mesh position={[0, 32.5, 0.75]}>
         <planeGeometry args={[5.4, 2.4]} />
-        <meshBasicMaterial color="#fffbe6" />
+        <meshBasicMaterial color="#fffbe6" toneMapped={false} />
       </mesh>
+      {night && (
+        <sprite position={[0, 32.5, 1.5]} scale={[26, 18, 1]}>
+          <spriteMaterial map={glowTexture} transparent depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} fog={false} />
+        </sprite>
+      )}
     </group>
   )
 }
 
-function Sky() {
+const SKIES = {
+  day: ['#5fb4ff', '#dff1ff'],
+  night: ['#060a18', '#1d2a4a'],
+}
+
+function Sky({ night }) {
   const geom = useMemo(() => {
     const g = new THREE.SphereGeometry(450, 16, 12)
-    const top = new THREE.Color('#5fb4ff')
-    const bottom = new THREE.Color('#dff1ff')
+    const [topC, bottomC] = SKIES[night ? 'night' : 'day']
+    const top = new THREE.Color(topC)
+    const bottom = new THREE.Color(bottomC)
     const colors = []
     const p = g.attributes.position
     for (let i = 0; i < p.count; i++) {
@@ -155,23 +179,66 @@ function Sky() {
     }
     g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     return g
-  }, [])
+  }, [night])
+  const stars = useMemo(() => {
+    if (!night) return null
+    const r = seatRng(5)
+    const pts = []
+    for (let i = 0; i < 500; i++) {
+      const a = r() * Math.PI * 2
+      const el = 0.25 + r() * 1.2
+      pts.push(Math.cos(a) * Math.cos(el) * 420, Math.sin(el) * 420, Math.sin(a) * Math.cos(el) * 420)
+    }
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
+    return g
+  }, [night])
   return (
-    <mesh geometry={geom}>
-      <meshBasicMaterial vertexColors side={THREE.BackSide} fog={false} depthWrite={false} />
-    </mesh>
+    <>
+      <mesh geometry={geom}>
+        <meshBasicMaterial vertexColors side={THREE.BackSide} fog={false} depthWrite={false} />
+      </mesh>
+      {stars && (
+        <points geometry={stars}>
+          <pointsMaterial color="#cfd8ff" size={1.6} sizeAttenuation={false} fog={false} transparent opacity={0.8} depthWrite={false} />
+        </points>
+      )}
+    </>
   )
 }
 
-export function Stadium({ home, away, excited = false }) {
+const BOARD_TEXT = {
+  TOUCHDOWN: 'TOUCHDOWN!',
+  FIRST: 'FIRST DOWN!',
+  PICK: 'INTERCEPTION!',
+  SACK: 'SACK!',
+  STOP: 'STOPPED!',
+  DEFENSE: 'DEFENSE!',
+  NOISE: 'MAKE SOME NOISE!',
+}
+
+/**
+ * home/away: NFL team objects. mood: crowd targets ({ home, away, groan, wave, lights }, src/three/crowd.jsx).
+ * board: what the video boards and ribbons say ('', 'TOUCHDOWN', 'DEFENSE', ...). night: lights-on look.
+ */
+export function Stadium({ home, away, mood, board = '', night = false }) {
   const seating = useSeatingGeometry()
+  const fans = useMemo(() => seatLayout(home, away), [home, away])
+  const bench = useMemo(() => benchLayout(home, away), [home, away])
+  const benchMood = useMemo(() => ({ home: mood.home, away: mood.away, groan: 0, wave: 0, lights: 0 }), [mood.home, mood.away])
+  const homeName = `${home.city} ${home.name}`.toUpperCase()
+  const title = BOARD_TEXT[board] ?? home.name.toUpperCase()
+  const hot = !!BOARD_TEXT[board]
+  const sub = hot ? homeName : `${away.name.toUpperCase()} AT ${home.name.toUpperCase()}`
+  const ribbon = hot ? `${title}   ${title}` : `LET’S GO ${home.name.toUpperCase()}`
+  const top = 1.6 + ROWS * ROW_RISE
   return (
     <group>
-      <Sky />
+      <Sky night={night} />
       <mesh geometry={seating}>
-        <meshLambertMaterial color="#8d96a3" />
+        <meshLambertMaterial color={night ? '#5d6572' : '#8d96a3'} />
       </mesh>
-      {/* padded walls in the home team's color */}
+      {/* padded walls in the home team's color, with LED ribbons along the sidelines */}
       {[-1, 1].map((sx) => (
         <mesh key={sx} position={[sx * (SIDE_X - 0.8), 0.7, 0]}>
           <boxGeometry args={[0.4, 1.4, 128]} />
@@ -184,12 +251,42 @@ export function Stadium({ home, away, excited = false }) {
           <meshLambertMaterial color={sz > 0 ? away.endzone : home.endzone} />
         </mesh>
       ))}
-      <Crowd home={home} away={away} excited={excited} />
+      {[-1, 1].map((sx) => (
+        <Ribbon key={sx} text={ribbon} color={hot ? '#ffd400' : '#ffffff'} bg={home.jersey} position={[sx * (SIDE_X - 1.05), 0.75, 0]} rotation={[0, -sx * Math.PI / 2, 0]} width={110} height={1.1} speed={hot ? 0.12 : 0.04} period={36} />
+      ))}
+      {/* facade ring above the top row */}
+      {[-1, 1].map((sx) => (
+        <mesh key={`f${sx}`} position={[sx * (SIDE_X + ROWS * ROW_DEPTH), top + 1.2, 0]}>
+          <boxGeometry args={[0.6, 2.4, 128 + ROWS * ROW_DEPTH * 2]} />
+          <meshLambertMaterial color={home.jersey} />
+        </mesh>
+      ))}
+      <Crowd fans={fans} mood={mood} detail={0} signColor="#ffffff" signAlt={home.stripe} flashSize={0.55} lightSize={0.35} />
+      <Crowd fans={bench} mood={benchMood} detail={0} />
+      {/* team areas: a strip of sideline paint behind each bench */}
+      {[-1, 1].map((sx) => (
+        <mesh key={`ta${sx}`} position={[sx * 30.9, 0.015, 0]} rotation-x={-Math.PI / 2}>
+          <planeGeometry args={[3.2, 46]} />
+          <meshLambertMaterial color={sx < 0 ? home.endzone : away.endzone} transparent opacity={0.55} />
+        </mesh>
+      ))}
+      {/* video boards above both end zones */}
+      {[-1, 1].map((sz) => (
+        <Jumbotron key={sz} title={title} sub={sub} team={home} hot={hot} position={[0, top + 11, sz * (END_Z + ROWS * ROW_DEPTH + 2)]} rotation={[0, sz > 0 ? Math.PI : 0, 0]} width={34} />
+      ))}
       <Goalpost z={-60} />
       <Goalpost z={60} />
+      <Pylons />
       {[[-48, -75], [48, -75], [-48, 75], [48, 75]].map(([x, z]) => (
-        <LightTower key={`${x}${z}`} x={x} z={z} />
+        <LightTower key={`${x}${z}`} x={x} z={z} night={night} />
       ))}
     </group>
   )
+}
+
+/** Real Monday and Thursday night games are played under the lights. */
+export function isNightGame(moment) {
+  if (!moment?.date) return false
+  const day = new Date(`${moment.date}T12:00:00Z`).getUTCDay()
+  return day === 1 || day === 4
 }

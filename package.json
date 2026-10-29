@@ -7,8 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "model": "/Applications/Blender.app/Contents/MacOS/Blender -b --python blender/build_player.py",
+    "model": "/Applications/Blender.app/Contents/MacOS/Blender -b --python blender/build_player.py && /Applications/Blender.app/Contents/MacOS/Blender -b --python blender/build_player.py -- --hoops && node scripts/pack-models.mjs",
     "model:preview": "/Applications/Blender.app/Contents/MacOS/Blender -b --python blender/build_player.py -- --preview",
+    "pack-models": "node scripts/pack-models.mjs",
     "data:hoops": "node scripts/build-hoops-moments.mjs .data-cache/hoops 2022 2026",
     "data": "node scripts/build-moments.mjs .data-cache 2012 2026 && node scripts/build-players.mjs .data-cache 2026"
   },

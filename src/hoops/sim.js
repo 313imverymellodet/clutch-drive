@@ -418,7 +418,9 @@ export class HoopsSim {
     B.gatherAt = t
     B.driving = false
     B.layup = layup
-    B.oneShot = layup ? 'Layup' : 'Shoot'
+    // bigs (and a springy small forward) close to the rim throw it down: same shot, different show
+    B.dunk = layup && distToHoop(B.pos) < 5 && (B.key === 'C' || B.key === 'PF' || (B.key === 'SF' && B.rating.finish >= 0.6))
+    B.oneShot = B.dunk ? 'Dunk' : layup ? 'Layup' : 'Shoot'
     B.oneShotUntil = t + 1.2
     B.anim = B.oneShot
     B.byUser = byUser && !layup
@@ -482,7 +484,7 @@ export class HoopsSim {
       b.state = 'swish'
       b.t0 = t
       const kind = s.fouled ? 'and1' : 'make'
-      this.end(t, { kind, points: pts, fts: s.fouled ? 1 : 0, shot: this.shotInfo() }, `${s.fouled ? 'AND ONE! ' : ''}${who_} ${s.three ? 'drains the three' : s.label === 'layup' ? 'scores at the rim' : 'hits the ' + s.label}!${gradeNote(s)}`)
+      this.end(t, { kind, points: pts, fts: s.fouled ? 1 : 0, shot: this.shotInfo() }, `${s.fouled ? 'AND ONE! ' : ''}${who_} ${s.three ? 'drains the three' : s.label === 'layup' ? (s.shooter.dunk ? 'throws it down' : 'scores at the rim') : 'hits the ' + s.label}!${gradeNote(s)}`)
       this.emit(s.three ? 'three' : 'make')
     } else {
       b.state = 'loose'
@@ -898,6 +900,26 @@ export class HoopsSim {
     }
   }
 
+  /** After the play: the shooter holds the follow-through on a three, bigs flex after a dunk, the bench claps. */
+  reaction(p) {
+    const r = this.result
+    const s = this.shot
+    const scored = r && r.points > 0
+    const stopped = r && ['miss', 'steal', 'shotclock', 'clock'].includes(r.kind)
+    const lead = p.key === 'PG' || p.key === 'C' || p.slot === 'PG' || p.slot === 'C'
+    if (p.team === 'off' && scored) {
+      if (p === s?.shooter) return s.three ? 'Hold' : p.dunk ? 'Flex' : 'Celebrate'
+      return lead ? 'Celebrate' : 'Clap'
+    }
+    if (p.team === 'def' && stopped) {
+      if ((r.kind === 'steal' && p.number === r.by) || (p === s?.contester && s.greatContest)) return 'Flex'
+      return lead ? 'Celebrate' : 'Clap'
+    }
+    if (p.team === 'off' && stopped && p === s?.shooter && r.kind === 'miss') return 'Dejected'
+    if (p.team === 'def' && scored && (s?.buzzer || s?.three) && p === s?.contester) return 'Dejected'
+    return 'Idle'
+  }
+
   pickAnim(p, t) {
     if (p.oneShot && t < p.oneShotUntil) {
       p.anim = p.oneShot
@@ -905,15 +927,12 @@ export class HoopsSim {
     }
     p.oneShot = null
     if (this.phase === 'over' || (this.phase === 'dead' && t > this.deadAt + 0.4)) {
-      const r = this.result
-      const scored = r && r.points > 0
-      const stopped = r && ['miss', 'steal', 'shotclock', 'clock'].includes(r.kind)
-      p.anim = (p.team === 'off' && scored) || (p.team === 'def' && stopped) ? (p === this.shot?.shooter || p.slot === 'C' || p.key === 'PG' ? 'Celebrate' : 'Idle') : 'Idle'
+      p.anim = this.reaction(p)
       return
     }
     const speed = p.vel.length()
     const hasBall = this.ball.holder === p && this.ball.state === 'held'
-    if (p.team === 'def') p.anim = speed > 9 ? 'Run' : 'Defend'
+    if (p.team === 'def') p.anim = speed > 9 ? 'Run' : speed > 2.5 ? 'DefSlide' : 'Defend'
     else if (hasBall) p.anim = speed > 10 ? 'Run' : 'Dribble'
     else {
       const screening = this.set.screens.some((s) => s.by === p.key && t >= s.from && t <= s.to)

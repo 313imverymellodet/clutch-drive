@@ -9,6 +9,7 @@ import { load, save } from '../game/storage'
 import { FieldBar, Scorebug, ShareButton, WPChart, WinProbMeter, wpTrail } from '../ui/GameUI'
 import { winProb } from '../game/winprob'
 import { momentForDay } from '../game/moments'
+import { isNightGame } from '../components/Stadium'
 import { TeamSelect } from '../ui/TeamSelect'
 import { DefensePicker } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
@@ -234,6 +235,7 @@ export default function Defend({ daily: isDaily }) {
             onStatus={onStatus}
             onEvent={playEvent}
             homeIsDefense
+            night={isDaily && isNightGame(momentForDay(dateKey))}
             los={inPlay ? sim.los : drive.ballOn - 50}
             firstDown={inPlay ? (sim.firstDown >= 50 ? null : sim.firstDown) : firstDownZ >= 50 ? null : firstDownZ}
           />

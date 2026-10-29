@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
-import { MODEL_URL, SKIN_TONES, buildCharacter, handWorld } from '../three/characters'
+import { MODEL_URL, SKIN_TONES, buildCharacter, footballLook, handWorld } from '../three/characters'
 import { Field } from '../components/Field'
 import { Stadium } from '../components/Stadium'
 import { BlobShadow, Football } from '../components/Props'
@@ -11,6 +11,28 @@ import { LiveRings } from '../components/LiveRings'
 import { FIXED_DT, LOS } from '../sim/playSim'
 
 const focus = new THREE.Vector3(0, 0, LOS + 5)
+
+const CALM = { home: 0.12, away: 0.08, groan: 0, wave: 0, board: '' }
+
+/**
+ * What the building is doing right now. The home crowd is for the home side (in Defense mode that's the defense):
+ * it hums before the snap (and sometimes starts a wave), gets loud during the play, and after the whistle one
+ * side goes off while the other holds its head. The video boards say what happened.
+ */
+function crowdFor(sim, homeIsDefense) {
+  const homeD = homeIsDefense ? 'DEFENSE' : ''
+  if (sim.phase === 'presnap') return { ...CALM, wave: sim.seed % 3 === 0 ? 1 : 0, board: homeD }
+  if (sim.phase === 'live' || !sim.result) return { home: 0.3, away: 0.15, groan: 0, wave: 0, board: homeD }
+  const r = sim.result
+  if (r.kind === 'spike') return { ...CALM, board: '' }
+  const homeGood = homeIsDefense ? !r.good : r.good
+  const big = r.kind === 'touchdown' || r.kind === 'interception'
+  if (homeGood) {
+    const board = r.kind === 'touchdown' ? 'TOUCHDOWN' : r.kind === 'interception' ? 'PICK' : r.kind === 'sack' ? 'SACK' : r.first ? 'FIRST' : homeIsDefense ? 'STOP' : 'NOISE'
+    return { home: big ? 1 : 0.75, away: 0.05, groan: 0, wave: 0, board }
+  }
+  return { home: 0.05, away: big ? 1 : 0.7, groan: big ? 1 : 0.55, wave: 0, board: '' }
+}
 const camGoal = new THREE.Vector3()
 const ballHold = new THREE.Vector3()
 const tmpTarget = new THREE.Vector3()
@@ -19,21 +41,23 @@ const tmpTarget = new THREE.Vector3()
  * Draws a PlaySim. `version` changes whenever the sim is reset so the 22 characters are rebuilt.
  * offense/defense are NFL team objects from src/data/nflTeams.js.
  */
-export default function PlayScene({ sim, version, offense, defense, onStatus, onEvent, los = LOS, firstDown = null, preview = null, homeIsDefense = false, liveControls = false }) {
+export default function PlayScene({ sim, version, offense, defense, onStatus, onEvent, los = LOS, firstDown = null, preview = null, homeIsDefense = false, liveControls = false, night = false }) {
   const gltf = useGLTF(MODEL_URL)
   const { camera, size, gl, scene } = useThree()
   const ballRef = useRef()
   const shadowRefs = useRef([])
   const lastStatus = useRef('')
   const acc = useRef(0)
-  const [excited, setExcited] = useState(false)
+  const [crowd, setCrowd] = useState(CALM)
+  const mood = useMemo(() => ({ ...crowd, lights: night ? 0.7 : 0 }), [crowd, night])
 
   // One rigged clone per player, dressed in its team's uniform with its jersey number.
   const actors = useMemo(
     () =>
-      sim.players.map((p, i) =>
-        buildCharacter(gltf, p.team === 'off' ? offense : defense, SKIN_TONES[(i * 7 + 3) % SKIN_TONES.length], p.number),
-      ),
+      sim.players.map((p, i) => {
+        const team = p.team === 'off' ? offense : defense
+        return buildCharacter(gltf, team, SKIN_TONES[(i * 7 + 3) % SKIN_TONES.length], p.number, footballLook(p.role, p.number, team.abbr))
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [gltf, offense, defense, version],
   )
@@ -41,7 +65,7 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
   useEffect(() => {
     focus.set(0, 0, sim.los + 5)
     acc.current = 0
-    setExcited(false)
+    setCrowd(CALM)
   }, [version, sim])
 
   // a new snap (or presnap) resets the status latch so the UI hears about it
@@ -95,9 +119,7 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
     if (status !== lastStatus.current) {
       lastStatus.current = status
       onStatus({ phase: sim.phase, message: sim.message, result: sim.result })
-      // the home crowd cheers for the home side (in Defense mode that's the defense)
-      const good = !!sim.result?.good
-      setExcited(sim.phase !== 'presnap' && sim.phase !== 'live' && !!sim.result && (homeIsDefense ? !good : good))
+      setCrowd(crowdFor(sim, homeIsDefense))
     }
   }
 
@@ -117,10 +139,11 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
 
   return (
     <>
-      <fog attach="fog" args={['#cfe9ff', 110, 420]} />
-      <hemisphereLight args={['#eef8ff', '#4a7d42', 1.5]} />
-      <directionalLight position={[8, 14, -6]} intensity={2.1} />
-      <Stadium home={homeIsDefense ? defense : offense} away={homeIsDefense ? offense : defense} excited={excited} />
+      {/* under the lights the sky goes dark but the field stays bright: cooler fill, warmer key */}
+      <fog attach="fog" args={night ? ['#0e1528', 120, 430] : ['#cfe9ff', 110, 420]} />
+      <hemisphereLight args={night ? ['#c3cfff', '#2f4a2c', 1.25] : ['#eef8ff', '#4a7d42', 1.5]} />
+      <directionalLight position={[8, 14, -6]} intensity={night ? 2.5 : 2.1} color={night ? '#fff1d6' : '#ffffff'} />
+      <Stadium home={homeIsDefense ? defense : offense} away={homeIsDefense ? offense : defense} mood={mood} board={crowd.board} night={night} />
       <Field home={offense} away={defense} midfield={homeIsDefense ? defense : offense} los={los} firstDown={firstDown} />
       {actors.map((a) => (
         <primitive key={a.root.uuid} object={a.root} />

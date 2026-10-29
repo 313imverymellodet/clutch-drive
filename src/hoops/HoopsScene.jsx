@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
-import { HOOPS_MODEL_URL, SKIN_TONES, buildHoopsCharacter, handWorld } from '../three/characters'
+import { HOOPS_MODEL_URL, SKIN_TONES, buildHoopsCharacter, handWorld, hoopsLook } from '../three/characters'
 import { FIXED_DT, RIM_HEIGHT } from './sim'
 import { HOOP } from './sets'
 import { hoopsUniform, numberStyle } from './teams'
@@ -231,7 +231,7 @@ const ballHand = new THREE.Vector3()
  * Draws a HoopsSim: 10 players, the ball, the court. `version` rebuilds the characters (new teams/roster).
  * offense/defense: NBA team objects; offenseAway: the offense wears white.
  */
-export default function HoopsScene({ sim, version, offense, defense, offenseAway, home, onStatus, onEvent, controls = false, onPass, tension = 0, board: boardHint = '' }) {
+export default function HoopsScene({ sim, version, offense, defense, offenseAway, home, onStatus, onEvent, controls = false, onPass, tension = 0, board: boardHint = '', distract = false }) {
   const gltf = useGLTF(HOOPS_MODEL_URL)
   const { camera, size } = useThree()
   const ballRef = useRef()
@@ -239,7 +239,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
   const shadowRefs = useRef([])
   const lastStatus = useRef('')
   const acc = useRef(0)
-  const [excited, setExcited] = useState(false)
+  const [reaction, setReaction] = useState(null) // { home, away, groan } for a few seconds after a big play
   const [moment, setMoment] = useState('') // big-play LED message for a few seconds
   const homeIsOffense = offense === home
   const markerRef = useRef()
@@ -252,7 +252,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
       sim.players.map((p, i) => {
         const team = p.team === 'off' ? offense : defense
         const away = p.team === 'off' ? offenseAway : !offenseAway
-        const a = buildHoopsCharacter(gltf, hoopsUniform(team, { away, hair: i * 5 + (p.team === 'off' ? 0 : 3) }), SKIN_TONES[(i * 7 + 2) % SKIN_TONES.length], p.number, numberStyle(team, away))
+        const a = buildHoopsCharacter(gltf, hoopsUniform(team, { away, hair: i * 5 + (p.team === 'off' ? 0 : 3) }), SKIN_TONES[(i * 7 + 2) % SKIN_TONES.length], p.number, numberStyle(team, away), hoopsLook(p.slot ?? p.key, p.number, team.abbr))
         const grow = { PG: 0.93, SG: 0.97, SF: 1, PF: 1.05, C: 1.09 }[p.key] ?? { dPG: 0.93, dSG: 0.97, dSF: 1, dPF: 1.05, dC: 1.09 }[p.key] ?? 1
         a.root.scale.multiplyScalar(grow)
         return a
@@ -264,13 +264,25 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
   useEffect(() => {
     lastStatus.current = ''
     acc.current = 0
-    setExcited(false)
+    setReaction(null)
   }, [version, sim])
   useEffect(() => {
-    if (!moment) return
-    const id = setTimeout(() => (setMoment(''), setExcited(false)), 3800)
+    if (!reaction) return
+    const id = setTimeout(() => (setMoment(''), setReaction(null)), 3800)
     return () => clearTimeout(id)
-  }, [moment])
+  }, [reaction])
+  // both sides of the building: the home crowd hums with the tension, the visitors' pocket a little less;
+  // a big play sends one side up and the other into its hands. Late and close, the phone lights come out.
+  const mood = useMemo(
+    () => ({
+      home: reaction?.home ?? tension,
+      away: reaction?.away ?? tension * 0.6,
+      groan: reaction?.groan ?? 0,
+      distract: distract ? 1 : 0,
+      lights: tension >= 0.25 ? 1 : 0,
+    }),
+    [reaction, tension, distract],
+  )
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 20) * sim.timeScale
@@ -348,11 +360,16 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
       // the home crowd goes off for home buckets and home stops
       const r = sim.result
       if (r && sim.phase === 'dead') {
-        const homeScored = r.points > 0 && homeIsOffense
-        const homeStop = !homeIsOffense && ['miss', 'steal', 'shotclock', 'clock'].includes(r.kind)
-        if (homeScored || homeStop) {
-          setExcited(true)
-          setMoment(homeScored ? (r.points === 3 ? 'THREE' : 'BUCKET') : 'STOP')
+        const scored = r.points > 0
+        const stop = ['miss', 'steal', 'shotclock', 'clock'].includes(r.kind)
+        const homeGood = (scored && homeIsOffense) || (stop && !homeIsOffense)
+        const awayGood = (scored && !homeIsOffense) || (stop && homeIsOffense)
+        if (homeGood) {
+          setReaction({ home: 1, away: 0, groan: 0 })
+          setMoment(scored ? (r.points === 3 ? 'THREE' : 'BUCKET') : 'STOP')
+        } else if (awayGood) {
+          // the visitors' corner goes off; the home crowd holds its head (harder when they scored)
+          setReaction({ home: 0.05, away: 1, groan: scored ? 1 : 0.6 })
         }
       }
     }
@@ -367,7 +384,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
       <pointLight position={[0, 30, 10]} intensity={300} distance={90} />
       <Court home={home} />
       <Hoop netRef={netRef} />
-      <Arena home={home} away={home === offense ? defense : offense} excite={excited ? 1 : tension} board={moment || boardHint} />
+      <Arena home={home} away={home === offense ? defense : offense} mood={mood} board={moment || boardHint} />
       <mesh ref={markerRef} visible={false}>
         <octahedronGeometry args={[0.7, 0]} />
         <meshBasicMaterial color="#ffd400" toneMapped={false} />
