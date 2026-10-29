@@ -33,7 +33,6 @@ import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
 import { captureCanvasProps } from '../capture'
 import { isNightGame } from '../components/Stadium'
-import { Confetti } from '../ui/Confetti'
 import { resultOf, trackEvent } from '../analytics'
 
 const SPIKE_RUNOFF = 3 // seconds to hustle to the line and clock it
@@ -449,7 +448,6 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
   }, [])
   return (
     <div className="modal-wrap">
-      {drive && won && <Confetti />}
       <div className={`modal ${won ? 'won' : 'lost'}`}>
         <div className="modal-emoji">{won ? '🏆' : '😤'}</div>
         <h2>{won ? 'You won it!' : 'So close.'}</h2>

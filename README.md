@@ -8,9 +8,20 @@ You're trailing late in the 4th with the clock running. Call the plays and win i
 - **Practice** (`/play?mode=practice`): pick any two of the 32 teams and run drives as often as you like.
 - **Defense** (`/play?mode=defense`): you just took the lead; stop the AI's two-minute drive. Call one of 8 coverages each snap, disguise your shell, and guess the concept. Win the Daily Drive and you get a bonus "hold the lead" round.
 - **Head-to-Head** (`/h2h`): duel a friend online. Create a match, send the link, and each of you gets one drive from the same late-game spot. On every snap the defense locks in a coverage (it can disguise its look and guess the play), then the offense reads the look and calls a play. Best drive wins.
-- **Locker Room** (`/locker`): every animation in any uniform.
+- **Locker Room** (`/locker`): both rosters up close, every animation in any uniform, body types by position, gear and hairstyles (New looks reshuffles them).
+- **What's new** (`/whats-new`): the V2 release notes, from `WHATS_NEW` in `src/seo.js` (the landing page's V2 section and the static HTML read the same list). Screenshots live in `public/v2/` (captured with branding off, see "Marketing captures").
 
 The name lives in `src/brand.js`, so a rename is a one-line change.
+
+## V2
+
+- **Players:** a face rig (blinking, mouth, brows, keyed in every clip), football shoulder pads and a real facemask, body-type shape keys (`Heavy`, `Lean`) and optional gear meshes, all chosen per position by `footballLook()` / `hoopsLook()` in `src/three/characters.js` (deterministic per player, so a look never changes between plays). See "Character pipeline".
+- **Animations:** football adds Shotgun, Ready, RunBall, Backpedal, Shuffle, Tackle, JukeL/JukeR, Spin, Slide, Spike, Dance, Flex, Dejected and Clap; hoops adds DefSlide, Dunk, Hold, Dance, Flex, Dejected and Clap. The sims only *name* the clip (`pickAnim`, `reaction`), never change positions or the RNG for it, so outcomes and replays are identical to V1 (`scripts/outcomes.mjs` and `scripts/hoops-outcomes.mjs` match). Bigs at the rim dunk instead of laying it in about two times in three, picked from the seed and jersey number.
+- **Crowds** (`src/three/crowd.jsx`): one instanced chibi-fan system for both venues. Each fan follows its own side (`home` / `away`), and the shader handles bounce, claps, arms up, groans (hands on heads), a stadium wave and the free-throw distraction sway. Camera flashes on big moments, phone lights at night and late in close games. Venues lay out their own seats: `src/components/Stadium.jsx` (football: visitors' section, both teams' sidelines, video boards and LED ribbons from `src/three/boards.jsx`, pylons, night games for real Monday/Thursday-night moments via `isNightGame()`), `src/hoops/Arena.jsx` (visitors' corner, benches, distraction zone behind the basket).
+- **Feel:** a touchdown swings the camera around the scorer; big threes, dunks and buzzer-beaters push in on the shooter; sacks, broken tackles and picks freeze the frame for ~0.1 s and shake the camera (cosmetic: the fixed-step sim just runs slower); confetti on wins (`src/ui/Confetti.jsx`); haptics on Android (`src/game/haptics.js`).
+- **Settings** (`src/game/settings.js`, ⚙️ in the game header, `src/ui/Settings.jsx`): sound, volume, haptics, camera angle per sport (football: Broadcast, All-22, Field level; hoops: Broadcast, Courtside, Overhead) and reduced motion (follows the system until changed; turns off the celebration cams, shake and confetti). Saved on the device.
+- **Hoops Survivor** (`/hoops?mode=survivor`): real endings back to back, tougher each game (`hoopsMomentForSurvivor`), AI defense difficulty rises with the run; a finished game never replays on reload.
+- **Dev:** `?night` on `/play` forces the night look; `node scripts/shot.mjs <url> <out.png> [camJson]` grabs one screenshot (optionally from a fixed `window.__cam`).
 
 ## Run it
 
@@ -44,7 +55,7 @@ During a play in Daily, Survivor and Practice you can take over:
 
 Crowd, touchdown roar, groan, cheer, tackle hit, QB cadence and the victory theme were generated with Viewmax (Everygen) and processed by `scripts/make-sounds.mjs` (trims silence, evens out volume, makes the crowd loop seamless, encodes AAC) into `public/sounds/`. `src/game/sound.js` downloads them as the game loads, decodes them on the first tap, and holds a clip asked for while audio is still starting (like the cadence on "Take the field") until it can play. It uses the built-in synth sounds for anything that fails to load. On iPhones it asks to be treated as media playback, so sound still plays with the silent switch on.
 
-## Clutch Hoops (`/hoops`, beta)
+## Clutch Hoops (`/hoops`)
 
 The basketball game: down late, your ball, one possession at a time both ways.
 
@@ -55,10 +66,10 @@ The basketball game: down late, your ball, one possession at a time both ways.
 - **End-game rules:** the game clock and shot clock run; a shot released before the horn counts; a timeout after a make or a stop advances the ball (saves about 4s); offensive rebounds reset the shot clock to 14. When you're behind, **Foul** to stop the clock. When the AI is behind, it fouls you, and you shoot free throws with a timing mini-game. A tie at the horn goes to a 45-second overtime.
 - **AI:** their defense keys on the sets you keep calling and sometimes disguises its look. Their offense attacks the coverages you lean on, and runs out the clock when it leads.
 - **Engine:** `src/hoops/sim.js` is a fixed-step, seeded half-court sim like the football one (instant replay re-runs your taps). `node scripts/hoops-outcomes.mjs` plays every set against every coverage to tune it: currently about 0.96 points per possession, with clear strengths and weaknesses per set.
-- **Arena and crowd** (`src/hoops/Arena.jsx`): about 900 low-poly fans in home colors. Bodies, heads and signs are three instanced meshes, and they bounce, clap and throw their arms up in the vertex shader. There are courtside seats, camera flashes on big moments, rafter banners, and LED ribbons that switch to DE-FENSE!, 3!!!, BUCKET! or STOP!. The crowd is partisan: it roars for home buckets and stops and groans for road ones.
+- **Arena and crowd** (`src/hoops/Arena.jsx`, fans from `src/three/crowd.jsx`): about 900 low-poly fans in home colors plus a visitors' corner, both benches, courtside seats, camera flashes on big moments, rafter banners, and LED ribbons that switch to DE-FENSE!, 3!!!, BUCKET! or STOP!. The crowd is partisan: home fans roar for home buckets and stops and put their hands on their heads for road ones, while the visitors' corner does the opposite.
 - **Sound** (`src/hoops/sound.js`, Viewmax clips `public/sounds/hoops-*.m4a`, made with `node scripts/make-sounds.mjs <dir> hoops`): arena crowd bed (louder when it's tight late), dribbles timed to the ball hitting the floor, sneaker squeaks on hard cuts, swish, rim clank, referee whistle, horn, the home crowd's DE-FENSE chant, roars and groans, and a hype track when you win.
-- **Characters:** `blender/build_player.py -- --hoops` builds `public/models/hoops.glb`: no helmet, hair, tank top, shorts, plus Dribble, Shoot, Pass, Defend, Contest and Layup clips.
-- Daily (`/hoops`) is a real NBA ending (below), the same for everyone each day. Practice (`/hoops?mode=practice`) lets you pick any two teams in a made-up spot. Survivor, Defense mode and head-to-head for hoops are next.
+- **Characters:** `blender/build_player.py -- --hoops` builds the basketball model: no helmet, tank top, shorts, five hairstyles, headband, beard and sleeve, plus Dribble, Shoot, Pass, Defend, DefSlide, Contest, Layup, Dunk and Hold clips.
+- Daily (`/hoops`) is a real NBA ending (below), the same for everyone each day. Survivor (`/hoops?mode=survivor`) chains real endings until you lose. Practice (`/hoops?mode=practice`) lets you pick any two teams in a made-up spot. Defense mode and head-to-head for hoops are next.
 - `node scripts/hoops-e2e.mjs [outDir] [w] [h] [mode]` plays a whole game through the UI.
 
 ## Real moments and win probability
@@ -151,16 +162,18 @@ Both sides are real coordinators (`src/sim/playSim.js`, `src/sim/aiOffense.js`):
 
 ## Character pipeline
 
-`blender/build_player.py` builds the whole character from code: mesh, rig, and all animation clips.
-It exports `public/models/player.glb` (~310 KB, mostly animation data) and saves `blender/player.blend` so you can open it and edit by hand.
+`blender/build_player.py` builds the whole character from code: meshes, rig, face rig, shape keys, gear and all animation clips.
+It exports raw GLBs to `blender/export/` (gitignored) and saves `blender/player.blend` / `hoops.blend` so you can open them and edit by hand. `npm run pack-models` compresses them with gltfpack (meshopt + quantization, about 200 KB each) into `public/models/`, which drei's `useGLTF` decodes. When the models change, bump `?v=` in `MODEL_URL` / `HOOPS_MODEL_URL` and the preloads in `src/seo.js` so browsers don't keep the old file.
 
 ```bash
-npm run model           # rebuild the GLB after changing the script
-npm run model:preview   # also render PNG previews to blender/preview/
+npm run model           # rebuild both GLBs and pack them
+npm run model:preview   # football model + PNG previews in blender/preview/ (add -- --hoops for basketball)
 ```
 
-- **Clips:** Idle, Stance, Run, Block, Throw, Catch, Dive, Fall, Celebrate (30 fps).
-- **Team colors:** materials named `Jersey`, `Pants`, `Helmet`, `Stripe`, `Socks`, `Glove` and `Skin` get recolored per team in `src/three/characters.js`.
+- **Clips:** football has 24 (`CLIPS`), basketball 18 (`HOOPS_CLIPS`), 30 fps. Every clip keys the face bones too, so expressions crossfade with the body.
+- **Face rig:** `eyes` (blink = scale along the bone), `mouth` (open = scale), `brow.L` / `brow.R` (tilt and raise). In a pose spec, `"_face": {"blink", "mouth", "brow", "raise", "wide"}`.
+- **Body types and gear:** every mesh has `Heavy` and `Lean` shape keys. Gear and hair are separate skinned meshes (football: `Visor`, `Towel`, `Sleeve`, `EyeBlack`; hoops: `HairShort`, `HairFade`, `HairAfro`, `HairTwists`, `HairBun`, `Headband`, `Beard`, `Sleeve`) that the app shows or hides by name.
+- **Team colors:** materials named `Jersey`, `Pants`, `Helmet`, `Stripe`, `Socks`, `Glove`, `Shoe`, `Hair` and `Skin` get recolored per team in `src/three/characters.js` (`Mouth`, `Shine`, `Visor`, `Towel`, `Mask` keep their colors).
 - **Posing:** the script measures each bone's axes, so poses are written as plain *swing / spread / twist* degrees. Feet stay flat automatically, and every pose is auto-grounded so nobody sinks into the turf.
 - **Hand-made art later:** if you model a nicer character in Blender, keep the same bone names, action names and material names. The game will load it with no code changes.
 

@@ -254,8 +254,6 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
         const team = p.team === 'off' ? offense : defense
         const away = p.team === 'off' ? offenseAway : !offenseAway
         const a = buildHoopsCharacter(gltf, hoopsUniform(team, { away, hair: i * 5 + (p.team === 'off' ? 0 : 3) }), SKIN_TONES[(i * 7 + 2) % SKIN_TONES.length], p.number, numberStyle(team, away), hoopsLook(p.slot ?? p.key, p.number, team.abbr))
-        const grow = { PG: 0.93, SG: 0.97, SF: 1, PF: 1.05, C: 1.09 }[p.key] ?? { dPG: 0.93, dSG: 0.97, dSF: 1, dPF: 1.05, dC: 1.09 }[p.key] ?? 1
-        a.root.scale.multiplyScalar(grow)
         return a
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

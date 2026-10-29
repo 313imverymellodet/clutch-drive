@@ -418,8 +418,9 @@ export class HoopsSim {
     B.gatherAt = t
     B.driving = false
     B.layup = layup
-    // bigs (and a springy small forward) close to the rim throw it down: same shot, different show
-    B.dunk = layup && distToHoop(B.pos) < 5 && (B.key === 'C' || B.key === 'PF' || (B.key === 'SF' && B.rating.finish >= 0.6))
+    // bigs (and a springy small forward) at the rim usually throw it down: same shot, different show
+    // (picked from the seed and jersey, never the sim's RNG, so outcomes and replays don't change)
+    B.dunk = layup && (B.key === 'C' || B.key === 'PF' || (B.key === 'SF' && B.rating.finish >= 0.6)) && (this.seed + B.number) % 3 !== 0
     B.oneShot = B.dunk ? 'Dunk' : layup ? 'Layup' : 'Shoot'
     B.oneShotUntil = t + 1.2
     B.anim = B.oneShot

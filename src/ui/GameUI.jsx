@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import confetti from 'canvas-confetti'
+import { celebrate } from './Confetti'
 import { COVERAGES, PLAYS } from '../sim/playSim'
 import { FAMILIES } from '../sim/playbook'
 import { isMuted, onMuteChange, setMuted, sfx, unlock } from '../game/sound'
@@ -185,16 +185,8 @@ export function headlineFor(result) {
 export function ResultBanner({ result, message }) {
   const h = headlineFor(result)
   useEffect(() => {
-    if (result?.kind !== 'touchdown') return
-    const colors = ['#ffd400', '#ffffff', '#ff5a36', '#2f6cff']
-    confetti({ particleCount: 140, spread: 80, origin: { y: 0.55 }, colors, disableForReducedMotion: true })
-    setTimeout(() => confetti({ particleCount: 90, angle: 60, spread: 60, origin: { x: 0, y: 0.7 }, colors, disableForReducedMotion: true }), 250)
-    setTimeout(() => confetti({ particleCount: 90, angle: 120, spread: 60, origin: { x: 1, y: 0.7 }, colors, disableForReducedMotion: true }), 400)
-    try {
-      navigator.vibrate?.([60, 40, 120])
-    } catch {
-      /* not supported */
-    }
+    // the touchdown buzz comes from the sound router (src/game/sound.js), which respects the haptics setting
+    if (result?.kind === 'touchdown') celebrate()
   }, [result])
   if (!h) return null
   return (

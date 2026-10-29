@@ -14,6 +14,7 @@ const Defend = lazy(() => import('./pages/Defend'))
 const Hoops = lazy(() => import('./pages/Hoops'))
 const Locker = lazy(() => import('./pages/Locker'))
 const HowToPlay = lazy(() => import('./pages/HowToPlay'))
+const WhatsNew = lazy(() => import('./pages/WhatsNew'))
 
 const MODE_LABEL = { daily: 'Daily Drive', survivor: 'Survivor', practice: 'Practice', defense: 'Defense', h2h: 'Head-to-Head' }
 
@@ -67,6 +68,12 @@ export default function App() {
     page = (
       <Suspense fallback={<div className="loading">Loading…</div>}>
         <HowToPlay />
+      </Suspense>
+    )
+  } else if (path === '/whats-new') {
+    page = (
+      <Suspense fallback={<div className="loading">Loading…</div>}>
+        <WhatsNew />
       </Suspense>
     )
   } else {

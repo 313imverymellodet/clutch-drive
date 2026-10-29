@@ -27,6 +27,10 @@
       "destination": "/locker.html"
     },
     {
+      "source": "/whats-new",
+      "destination": "/whats-new.html"
+    },
+    {
       "source": "/r",
       "destination": "/api/r"
     },

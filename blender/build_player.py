@@ -1123,18 +1123,20 @@ if HOOPS:
         (5, {"hips": (24,), "spine": (26,), "head": (-30,), "thigh.L": (70,), "thigh.R": (70,), "shin.L": (-95,), "shin.R": (-95,),
              "upper_arm.R": (50, 12), "forearm.R": (70,), "upper_arm.L": (50, 12), "forearm.L": (70,),
              "_face": {"brow": 26, "mouth": 0.9}}, None),
+        # he glides at the rim in the air (fwd), then lands and steps back to his spot
         (10, {"spine": (-12,), "head": (-30,), "thigh.L": (35,), "shin.L": (-70,), "thigh.R": (10,), "shin.R": (-40,),
               "upper_arm.R": (185, 6), "forearm.R": (10,), "upper_arm.L": (170, 18), "forearm.L": (15,),
-              "_face": {"brow": 28, "mouth": 1.7, "wide": 1.1}}, None, {"lift": 0.52}),
+              "_face": {"brow": 28, "mouth": 1.7, "wide": 1.1}}, {"fwd": 0.35}, {"lift": 0.52}),
         (14, {"spine": (14,), "head": (-18,), "thigh.L": (45,), "shin.L": (-80,), "thigh.R": (25,), "shin.R": (-55,),
               "upper_arm.R": (135, 8), "forearm.R": (15,), "upper_arm.L": (150, 18), "forearm.L": (20,),
-              "_face": {"brow": 26, "mouth": 2.0, "wide": 1.2}}, None, {"lift": 0.5}),
+              "_face": {"brow": 26, "mouth": 2.0, "wide": 1.2}}, {"fwd": 0.55}, {"lift": 0.5}),
         (20, {"spine": (2,), "head": (-15,), "thigh.L": (20,), "shin.L": (-40,), "thigh.R": (15,), "shin.R": (-35,),
               "upper_arm.R": (160, 20), "forearm.R": (20,), "upper_arm.L": (160, 20), "forearm.L": (20,),
-              "_face": {"brow": 10, "mouth": 1.8, "raise": 0.01}}, None, {"lift": 0.3}),
+              "_face": {"brow": 10, "mouth": 1.8, "raise": 0.01}}, {"fwd": 0.5}, {"lift": 0.3}),
         (28, {"hips": (16,), "spine": (18,), "head": (-20,), "thigh.L": (50, 16), "thigh.R": (50, 16), "shin.L": (-70,), "shin.R": (-70,),
               "upper_arm.R": (40, 40), "forearm.R": (60,), "upper_arm.L": (40, 40), "forearm.L": (60,),
-              "_face": {"brow": 20, "mouth": 1.6, "wide": 1.15}}, None),
+              "_face": {"brow": 20, "mouth": 1.6, "wide": 1.15}}, {"fwd": 0.2}),
+        (34, {**idle(0)[0], "_face": {"brow": 14, "mouth": 1.4}}, None),
     ])
 
     def hold(t):

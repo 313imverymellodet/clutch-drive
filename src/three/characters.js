@@ -4,7 +4,8 @@ import { isLight, uniformOf } from '../data/nflTeams'
 
 export { NFL_TEAMS, TEAM_BY_ABBR } from '../data/nflTeams'
 
-export const MODEL_URL = '/models/player.glb'
+// ?v= busts browser caches when the models change (keep in sync with the preloads in src/seo.js)
+export const MODEL_URL = '/models/player.glb?v=2'
 export const PLAYER_SCALE = 1.2 // model is ~1.47 units tall; 1 unit = 1 yard on the field
 
 // Clip names come straight from the Blender action names in blender/build_player.py
@@ -112,7 +113,7 @@ export function footballLook(role, number = 0, teamKey = '') {
 
 /** Same for a basketball slot (PG..C): bigs are heavier and taller, and everyone gets a hairstyle. */
 export function hoopsLook(slot, number = 0, teamKey = '') {
-  const body = { PG: [0, 0.6], SG: [0, 0.35], SF: [0.1, 0.1], PF: [0.5, 0], C: [0.85, 0] }[slot] ?? [0, 0]
+  const body = { PG: [0, 0.6, 0.93], SG: [0, 0.35, 0.97], SF: [0.1, 0.1, 1], PF: [0.5, 0, 1.05], C: [0.85, 0, 1.09] }[slot] ?? [0, 0, 1]
   const r = (salt) => hash(teamKey, number, slot, salt)
   const gear = []
   const h = r('hair')
@@ -121,7 +122,7 @@ export function hoopsLook(slot, number = 0, teamKey = '') {
   if (r('band') < 0.22 && style !== 'HairAfro' && style !== 'HairBun') gear.push('Headband')
   if (r('beard') < 0.3) gear.push('Beard')
   if (r('sleeve') < 0.25) gear.push('Sleeve')
-  return { heavy: body[0], lean: body[1], gear }
+  return { heavy: body[0], lean: body[1], height: body[2], gear }
 }
 
 /** Apply a look to a cloned model: shape keys on every mesh, optional meshes on or off. */
@@ -160,7 +161,7 @@ export function buildCharacter(gltf, team, skin = SKIN_TONES[1], number = null, 
   return { root, hand, animator: new Animator(root, gltf.animations) }
 }
 
-export const HOOPS_MODEL_URL = '/models/hoops.glb'
+export const HOOPS_MODEL_URL = '/models/hoops.glb?v=2'
 export const HOOPS_SCALE = 4.4 // feet: about a 6'6" player, chibi proportions
 
 /** The basketball model: uniform = material slot -> color (see src/hoops/teams.js hoopsUniform). */
@@ -174,7 +175,7 @@ export function buildHoopsCharacter(gltf, uniform, skin, number, numberStyle, lo
   })
   applyLook(root, look, HOOPS_GEAR)
   if (number != null) addNumbers(root, number, numberStyle, depthOf(look))
-  root.scale.setScalar(HOOPS_SCALE)
+  root.scale.setScalar(HOOPS_SCALE * (look?.height ?? 1))
   const hand = root.getObjectByName('forearmR')
   return { root, hand, animator: new Animator(root, gltf.animations) }
 }
