@@ -4,6 +4,7 @@ import { PLAYS, chooseDefense } from '../sim/playSim'
 import { FAMILIES } from '../sim/playbook'
 import { bestPlaysVs } from '../sim/aiOffense'
 import { winProb } from './winprob'
+import { driveResultUrl } from '../share'
 
 /*
  * The drive: game clock, downs, field position, score, win/lose.
@@ -185,6 +186,7 @@ function applyResultRaw(d, playId, result) {
 }
 
 // ------------------------------------------------------------------ sharing
+/** The shared result. url = the site origin; the link at the end is this result's own page (src/share.js). */
 export function shareText(d, { mode, day, streak, url }) {
   const won = d.status === 'won'
   const title = mode === 'daily' ? `${BRAND.name} #${day}` : mode === 'survivor' ? `${BRAND.name} Survivor` : BRAND.name
@@ -200,7 +202,7 @@ export function shareText(d, { mode, day, streak, url }) {
     history = `\n📅 Real ${d.moment.season}: ${realWon ? 'they won' : 'they lost'} · ${won && !realWon ? 'I beat history 🔥' : won ? 'matched history' : realWon ? 'history wins this one' : 'same as history'}`
   }
   const extra = mode === 'survivor' && streak ? `\nSurvivor streak: ${streak} 🔥` : ''
-  return `${title} 🏈\n${line}\n${grid}\n${wpLine}${history}${extra}\n${url}`
+  return `${title} 🏈\n${line}\n${grid}\n${wpLine}${history}${extra}\n${driveResultUrl(url, d, { mode, day, streak })}`
 }
 
 // ------------------------------------------------------------------ defense + coach

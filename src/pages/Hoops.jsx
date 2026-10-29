@@ -219,7 +219,7 @@ export default function Hoops({ mode: rawMode }) {
     finished.current = g.id
     trackEvent('game_end', { mode: `hoops-${mode}`, result: resultOf(g.status === 'won', scenario.moment) })
     if (mode === 'daily' && !load(`cd.hoops.${dateKey}`, null)) {
-      save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: `${SITE}/hoops`, mode, moment: scenario.moment }), grid: g.log.map((p) => p.emoji).join('') })
+      save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: SITE, mode, moment: scenario.moment }), grid: g.log.map((p) => p.emoji).join('') })
       // daily stats: played, wins, streak (a streak needs yesterday's game too)
       const st = load('cd.hoops.stats', { last: null, streak: 0, played: 0, wins: 0 })
       const won = g.status === 'won'
@@ -383,7 +383,7 @@ function defTip(g) {
 
 function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
   const won = g ? g.status === 'won' : saved?.status === 'won'
-  const text = g ? shareText(g, { day, url: `${SITE}/hoops`, mode, moment }) : saved?.text
+  const text = g ? shareText(g, { day, url: SITE, mode, moment }) : saved?.text
   // stats are saved by the parent right after this mounts, so re-read them a beat later
   const [stats, setStats] = useState(() => load('cd.hoops.stats', { played: 0, wins: 0, streak: 0 }))
   useEffect(() => {

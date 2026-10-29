@@ -104,6 +104,15 @@ Data credit: real game situations and the hoops win-probability model come from 
 
 These answer how many people finish the Daily, how often they win, and how many share. **Vercel only records custom events on Pro plans and up** (2 properties per event on Pro, which is why each event has at most two). On Hobby the calls are dropped silently. In dev they're logged to the console as `[track]`.
 
+### Result cards in link previews
+
+A shared result ends with a link to that result, like `/r?s=h&m=d&n=8&a=LAL&b=BOS&x=101-99&w=1&g=grlwofogl&o=1&p=23&y=2024&h=0`, so iMessage, X, Discord and WhatsApp previews show the player's own card: teams in their colors, the final score, the emoji grid, how it went and whether they beat history.
+
+- `src/share.js` encodes a finished drive/game into those params (sport, mode, day, teams, score, won, grid as one letter per emoji, clock left or loss reason, win prob, real year and result, survivor streak) and validates them on the way back. Every value is checked against a fixed list (teams, grid letters, number ranges), so a crafted link can't put arbitrary text on a card. `shareText()` in `src/game/drive.js` and `src/hoops/game.js` uses it.
+- `api/r.js` (Vercel function; `vercel.json` rewrites `/r` to it) serves a small page with that result's title, description and `og:image`, and sends people on to the Daily (`/play?mode=daily`, Survivor, or `/hoops`) with `location.replace`. Link-preview crawlers (matched by user agent, including Apple's, which runs scripts) get the page without the redirect. A link that doesn't validate redirects to the Daily.
+- `api/og.js` draws the 1200x630 PNG with `@vercel/og` (Archivo Black + Archivo from `api/_fonts`, SIL OFL; emoji from Twemoji). About 80 kB, cached for good per URL: bump `OG_VERSION` in `api/r.js` when the design changes.
+- `node scripts/og-samples.mjs [dir]` renders a set of sample cards and both versions of the landing page through the real functions, no server needed. `serve-dist.mjs` runs the functions too, so `/r?…` works locally.
+
 ## Real branding
 
 The game shows **real player names, jersey numbers and team logos** in dev, previews and (since `REAL_BRANDING=1` was set on the Vercel project's Production environment) on the live site.
@@ -179,6 +188,7 @@ Manual deploy, if ever needed: `npx vercel deploy --prod`.
 | `scripts/build-players.mjs`, `src/game/real.jsx` | Real lineups and logos for test builds |
 | `src/ui/LiveControls.jsx`, `src/components/LiveRings.jsx` | Live QB and ball-carrier controls |
 | `src/hoops/*`, `src/pages/Hoops.jsx` | Clutch Hoops: sets, sim, game rules, AI, scene, UI |
+| `src/share.js`, `api/r.js`, `api/og.js` | Result links in shared text, their landing page and per-result share card |
 | `src/data/nflTeams.js` | 32 teams: city, name, abbreviation, uniform colors (jersey, helmet, stripe, pants, socks, numbers, end zone) |
 | `src/three/characters.js` | Loads and clones the rig, applies toon materials, uniforms and jersey numbers, `Animator` (crossfading clip player) |
 | `src/sim/playSim.js` | Play calls, roles, routes, coverage, blocking, ball flight, catches, breakups, tackles. Seeded and fixed-step, so replays are exact. Units are yards; offense drives toward +z |
