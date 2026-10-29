@@ -26,6 +26,7 @@ import { TeamSelect } from '../ui/TeamSelect'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { rosterFor, useRealData } from '../game/real'
+import { trackEvent } from '../analytics'
 
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 // ------------------------------------------------------------------ connection / lobby
@@ -86,6 +87,7 @@ export default function H2H({ room: roomParam }) {
     setCode(c)
     setPhase('hosting')
     setRole('host')
+    trackEvent('game_start', { mode: 'h2h-host' })
     try {
       roomRef.current = await hostRoom(c, {
         onGuest: (ch) => {
@@ -118,6 +120,7 @@ export default function H2H({ room: roomParam }) {
     if (c.length < 4) return setError('Enter the 5-letter code from your friend.')
     setPhase('joining')
     setRole('guest')
+    trackEvent('game_start', { mode: 'h2h-guest' })
     try {
       const ch = await joinRoom(c, { onStatus: setJoinStep, hello: { team } })
       chan.current = ch
@@ -221,7 +224,7 @@ function Lobby({ phase, team, pickTeam, code, setCode, error, onCreate, onJoin, 
             <div className="room-code" aria-label="Room code">{code || '·····'}</div>
             <p className="fine">Send this link to a friend. The match starts when they join.</p>
             <div className="lobby-actions">
-              <ShareButton text={`Duel me in Clutch Drive 🏈 ${link}`} label="Share invite link" />
+              <ShareButton text={`Duel me in Clutch Drive 🏈 ${link}`} label="Share invite link" event="h2h-invite" />
               <button className="btn" onClick={() => navigator.clipboard?.writeText(link)}>Copy link</button>
             </div>
             <p className="waiting"><span className="spinner" /> Waiting for your opponent…</p>
@@ -528,7 +531,7 @@ function DuelOver({ m, role, onRematch }) {
         </div>
         <div className="modal-actions">
           <button className="btn primary" onClick={onRematch}>Rematch (switch who starts)</button>
-          <ShareButton text={text} label="Share result" />
+          <ShareButton text={text} label="Share result" event="h2h" />
           <button className="btn" onClick={() => navigate('/h2h')}>New opponent</button>
         </div>
       </div>

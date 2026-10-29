@@ -87,10 +87,22 @@ Data credit: real game situations and the hoops win-probability model come from 
 
 - **One source of truth:** `src/seo.js` holds every page's title, description, share image, crawlable intro text, the How to Play guide and the FAQ. `SITE_URL` lives there too, so moving to a custom domain is a one-line change.
 - **Build step:** `scripts/seo-pages.mjs` runs after `vite build` (wired in `vite.config.js`). It writes a real HTML file per route (`index.html`, `play.html`, `hoops.html`, `h2h.html`, `how-to-play.html`, `locker.html`), each with its own `<title>`, description, canonical URL, Open Graph/Twitter card and JSON-LD (WebSite, VideoGame ×2, FAQPage, BreadcrumbList). It also puts readable text inside `#root`, so crawlers, link previews and no-JS visitors get content, and the app replaces it as soon as it starts. It also writes `sitemap.xml` and `robots.txt`.
-- **Routing:** `vercel.json` rewrites `/play`, `/hoops`, `/h2h`, `/how-to-play` and `/locker` to their HTML files. Everything else falls back to `index.html`. In the browser, `applyMeta()` keeps the title, description and canonical correct as you navigate.
+- **Routing:** `vercel.json` rewrites `/play`, `/hoops`, `/h2h`, `/how-to-play` and `/locker` to their HTML files. Everything else falls back to `index.html`. In the browser, `applyMeta()` keeps the title, description and canonical correct as you navigate. The mode pages (`/play?mode=survivor`, `defense`, `practice`, `/hoops?mode=practice`) get their own tab title but point their canonical at the daily, so the sitemap lists only canonical URLs.
 - **Speed (a ranking factor):** the app shell no longer imports three.js. The landing page's 3D players load after the first paint, models are preloaded only on the pages that use them, and the display font is self-hosted and preloaded (`public/fonts`, SIL OFL). Lighthouse mobile on the home page went from performance 31 / SEO 92 to 100 / 100 with devtools throttling (73 in the default simulated mode). Accessibility and best practices are 100.
 - `node scripts/serve-dist.mjs` serves `dist/` with the same rewrites and gzip as Vercel, for local Lighthouse and e2e runs.
 - Share images: `public/og.png` (football) and `public/og-hoops.jpg`.
+
+## Analytics
+
+`@vercel/analytics` records page views. `src/analytics.js` adds funnel events:
+
+| Event | Properties |
+|---|---|
+| `game_start` | `mode`: drive-daily, drive-survivor, drive-practice, defense, defense-daily, hoops-daily, hoops-practice, h2h-host, h2h-guest |
+| `game_end` | `mode`, `result`: win, loss, or win-beat-history (won a real moment the real team lost) |
+| `share` | `mode` (also h2h-invite), `method`: native, clipboard, prompt |
+
+These answer how many people finish the Daily, how often they win, and how many share. **Vercel only records custom events on Pro plans and up** (2 properties per event on Pro, which is why each event has at most two). On Hobby the calls are dropped silently. In dev they're logged to the console as `[track]`.
 
 ## Real branding
 

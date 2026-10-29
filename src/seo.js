@@ -202,25 +202,21 @@ export function structuredData(path) {
   return out
 }
 
-/** Pages listed in sitemap.xml. */
+/** Pages listed in sitemap.xml: canonical URLs only (the mode pages point their canonical at the daily). */
 export const SITEMAP = [
   ['/', 'daily', 1],
   ['/play?mode=daily', 'daily', 0.9],
   ['/hoops', 'daily', 0.9],
   ['/how-to-play', 'monthly', 0.7],
   ['/h2h', 'monthly', 0.7],
-  ['/play?mode=survivor', 'weekly', 0.6],
-  ['/play?mode=defense', 'weekly', 0.6],
-  ['/play?mode=practice', 'monthly', 0.5],
-  ['/hoops?mode=practice', 'monthly', 0.5],
 ]
 
 /** In the browser: keep title, description, canonical and share tags right as the app navigates. */
-export function applyMeta(path) {
+export function applyMeta(path, title = null) {
   if (typeof document === 'undefined') return
   const key = ROUTES[path] ? path : '/'
   const r = ROUTES[key]
-  document.title = r.title
+  document.title = title ?? r.title
   const set = (selector, make, attr, value) => {
     let el = document.head.querySelector(selector)
     if (!el) {

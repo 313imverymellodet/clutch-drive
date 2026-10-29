@@ -14,6 +14,7 @@ import { load, save } from '../game/storage'
 import { preloadHoops, setAmbienceLevel, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { captureCanvasProps } from '../capture'
+import { resultOf, trackEvent } from '../analytics'
 
 const HoopsScene = lazy(() => import('../hoops/HoopsScene'))
 const SITE = typeof location !== 'undefined' ? location.origin : ''
@@ -95,6 +96,7 @@ export default function Hoops({ mode: rawMode }) {
     startAmbience('hoops-crowd')
     hsfx.whistle()
     begin(g)
+    trackEvent('game_start', { mode: `hoops-${mode}` })
   }
   useEffect(() => {
     preloadHoops()
@@ -215,6 +217,7 @@ export default function Hoops({ mode: rawMode }) {
   useEffect(() => {
     if (stage !== 'over' || g.status === 'playing' || finished.current === g.id) return
     finished.current = g.id
+    trackEvent('game_end', { mode: `hoops-${mode}`, result: resultOf(g.status === 'won', scenario.moment) })
     if (mode === 'daily' && !load(`cd.hoops.${dateKey}`, null)) {
       save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: `${SITE}/hoops`, mode, moment: scenario.moment }), grid: g.log.map((p) => p.emoji).join('') })
       // daily stats: played, wins, streak (a streak needs yesterday's game too)
@@ -411,7 +414,7 @@ function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
           </div>
         )}
         <div className="modal-actions">
-          {text && <ShareButton text={text} />}
+          {text && <ShareButton text={text} event={`hoops-${mode}`} />}
           <button className="btn" onClick={onAgain}>{mode === 'daily' ? 'Practice' : 'New game'}</button>
           <button className="btn" onClick={() => navigate('/play?mode=daily')}>🏈 Today’s Daily Drive</button>
         </div>

@@ -32,6 +32,7 @@ import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sou
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
 import { captureCanvasProps } from '../capture'
+import { resultOf, trackEvent } from '../analytics'
 
 const SPIKE_RUNOFF = 3 // seconds to hustle to the line and clock it
 const MODES = { daily: 'Daily Drive', survivor: 'Survivor', practice: 'Practice' }
@@ -152,6 +153,7 @@ export default function Game({ mode: rawMode }) {
     sfx.cadence()
     huddleFrom.current = drive.clock
     setStage('call')
+    trackEvent('game_start', { mode: `drive-${mode}` })
   }
   useEffect(() => () => stopAmbience(), [])
 
@@ -257,6 +259,7 @@ export default function Game({ mode: rawMode }) {
   useEffect(() => {
     if (stage !== 'over' || drive.status === 'playing' || finished.current === scenario.id) return
     finished.current = scenario.id
+    trackEvent('game_end', { mode: `drive-${mode}`, result: resultOf(drive.status === 'won', scenario.moment) })
     if (mode === 'daily' && !load(`cd.daily.${dateKey}`, null)) {
       save(`cd.daily.${dateKey}`, { status: drive.status, text: shareText(drive, { mode, day, url: SITE }), plays: drive.plays.map((p) => p.emoji).join('') })
       const st = load('cd.dailyStreak', { last: null, streak: 0, played: 0, wins: 0 })
@@ -472,7 +475,7 @@ function GameOver({ mode, day, drive, saved, survivor, onNextSurvivor, onNewRun,
         )}
 
         <div className="modal-actions">
-          {text && <ShareButton text={text} />}
+          {text && <ShareButton text={text} event={`drive-${mode}`} />}
           {onReplay && <button className="btn" onClick={onReplay}>↺ Replay last play</button>}
           {mode === 'survivor' && won && <button className="btn" onClick={onNextSurvivor}>Next game →</button>}
           {mode === 'survivor' && !won && <button className="btn" onClick={onNewRun}>Start a new run</button>}
