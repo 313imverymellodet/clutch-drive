@@ -13,6 +13,7 @@ import { dayNumber, todayKey } from '../game/drive'
 import { load, save } from '../game/storage'
 import { preloadHoops, setAmbienceLevel, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
+import { captureCanvasProps } from '../capture'
 
 const HoopsScene = lazy(() => import('../hoops/HoopsScene'))
 const SITE = typeof location !== 'undefined' ? location.origin : ''
@@ -256,7 +257,7 @@ export default function Hoops({ mode: rawMode }) {
   return (
     <main className="game hoops">
       <Suspense fallback={<div className="loading">Lacing up sneakers…</div>}>
-        <Canvas dpr={[1, 2]} camera={{ fov: 46, position: [0, 40, 50], near: 0.5, far: 600 }}>
+        <Canvas dpr={[1, 2]} camera={{ fov: 46, position: [0, 40, 50], near: 0.5, far: 600 }} {...captureCanvasProps}>
           <HoopsScene
             sim={sim}
             version={`${scenario.id}-${youOffense}`}

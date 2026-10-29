@@ -324,7 +324,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
     // a marker over the ball handler you control
     if (markerRef.current) {
       const B = sim.ball.state === 'held' ? sim.ball.holder : null
-      markerRef.current.visible = !!(controls && B && B.team === 'off')
+      markerRef.current.visible = !!(controls && B && B.team === 'off') && !(import.meta.env.DEV && window.__cam)
       if (B) {
         markerRef.current.position.set(B.pos.x, 9.6 + Math.sin(performance.now() / 180) * 0.25, B.pos.z)
         markerRef.current.rotation.y += rawDt * 3
@@ -391,6 +391,17 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
 }
 
 function updateCamera(sim, camera, size, rawDt) {
+  // capture mode: the recorder flies the camera itself ({ pos, look, fov })
+  if (import.meta.env.DEV && window.__cam) {
+    const c = window.__cam
+    if (c.fov && camera.fov !== c.fov) {
+      camera.fov = c.fov
+      camera.updateProjectionMatrix()
+    }
+    camera.position.set(...c.pos)
+    camera.lookAt(...c.look)
+    return
+  }
   const aspect = size.width / size.height
   const fov = aspect < 1 ? 62 : 46
   if (camera.fov !== fov) {

@@ -11,3 +11,7 @@ blender/preview
 .data-cache
 blender/preview_hoops/
 blender/*.blend1
+
+# rendered marketing deliverables and captured frames (regenerate with marketing/tools)
+marketing/out
+marketing/assets

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Web development services</title>
+<style>
+  @font-face { font-family: 'Archivo Black'; src: url(../assets/archivo-black-latin.woff2) format('woff2'); }
+  :root { --ink: #0b0d14; --violet: #7c6cff; --orange: #ff7a1a; --yellow: #ffd400; --mint: #2ee6a8; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: var(--w); height: var(--h); overflow: hidden; background: var(--ink); }
+  body { font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif; color: #fff; }
+  .card { position: relative; width: var(--w); height: var(--h); overflow: hidden;
+    background:
+      radial-gradient(700px 520px at 88% 6%, rgba(124,108,255,.42), transparent 70%),
+      radial-gradient(640px 520px at 0% 70%, rgba(255,122,26,.30), transparent 70%),
+      radial-gradient(500px 400px at 100% 100%, rgba(46,230,168,.18), transparent 70%),
+      #0b0d14; }
+  .grid { position: absolute; inset: 0; opacity: .09; background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 54px 54px; mask-image: linear-gradient(180deg, #000 0%, transparent 70%); }
+  .inner { position: absolute; inset: 0; padding: var(--pad); display: flex; flex-direction: column; }
+
+  .eyebrow { align-self: flex-start; display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-radius: 999px; background: rgba(255,255,255,.08); border: 1.5px solid rgba(255,255,255,.18); font-weight: 900; font-size: 18px; letter-spacing: .18em; }
+  .eyebrow i { width: 11px; height: 11px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 14px var(--mint); }
+  h1 { font-family: 'Archivo Black'; font-size: var(--h1); line-height: .98; letter-spacing: -.01em; margin: 24px 0 14px; }
+  h1 em { font-style: normal; background: linear-gradient(90deg, var(--yellow), var(--orange)); -webkit-background-clip: text; color: transparent; }
+  .lede { font-size: var(--lede); font-weight: 600; color: rgba(255,255,255,.78); line-height: 1.38; max-width: 860px; }
+
+  .proof { position: relative; height: var(--proofH); margin: var(--proofGap) 0; }
+  .browser { position: absolute; left: 0; top: 0; width: var(--browserW); border-radius: 18px; overflow: hidden; background: #1a1d27; box-shadow: 0 30px 70px rgba(0,0,0,.55), 0 0 0 1.5px rgba(255,255,255,.12); transform: rotate(-1.5deg); }
+  .browser .bar { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 16px; background: #222633; }
+  .browser .bar i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+  .browser .bar i:nth-child(2) { background: #febc2e; }
+  .browser .bar i:nth-child(3) { background: #28c840; }
+  .browser .bar span { margin-left: 14px; flex: 1; height: 22px; border-radius: 6px; background: rgba(255,255,255,.08); font-size: 13px; line-height: 22px; padding-left: 12px; color: rgba(255,255,255,.6); font-weight: 600; }
+  .browser img { display: block; width: 100%; height: calc(var(--proofH) - 38px); object-fit: cover; object-position: top center; }
+  .phone { position: absolute; right: 0; top: var(--phoneTop); width: var(--phoneW); border-radius: 34px; padding: 10px; background: #0f1117; box-shadow: 0 30px 70px rgba(0,0,0,.6), 0 0 0 2px rgba(255,255,255,.16); transform: rotate(4deg); }
+  .phone img { display: block; width: 100%; height: calc(var(--proofH) - 40px); object-fit: cover; object-position: top center; border-radius: 26px; }
+  .scores { position: absolute; left: 18px; bottom: -18px; display: flex; gap: 10px; transform: rotate(-1.5deg); }
+  .score { display: flex; align-items: center; gap: 10px; padding: 9px 14px 9px 9px; border-radius: 999px; background: #fff; color: var(--ink); font-weight: 900; font-size: 16px; box-shadow: 0 10px 24px rgba(0,0,0,.4); }
+  .score b { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; border: 4px solid #0cce6b; color: #0a8f4b; font-size: 15px; }
+  .tag { position: absolute; left: 22px; top: -18px; z-index: 2; padding: 7px 14px; border-radius: 999px; background: var(--mint); color: var(--ink); font-weight: 900; font-size: 14px; letter-spacing: .12em; transform: rotate(-1.5deg); box-shadow: 0 6px 16px rgba(0,0,0,.35); }
+
+  .plans { display: grid; grid-template-columns: var(--cols); gap: 22px; }
+  .plan { position: relative; border-radius: 26px; padding: var(--planPad); background: rgba(255,255,255,.06); border: 2px solid rgba(255,255,255,.14); backdrop-filter: blur(8px); }
+  .plan.pro { background: linear-gradient(160deg, rgba(124,108,255,.30), rgba(255,122,26,.18)); border-color: var(--yellow); box-shadow: 0 0 0 4px rgba(255,212,0,.14), 0 26px 60px rgba(0,0,0,.45); }
+  .badge { position: absolute; top: -17px; right: 24px; padding: 7px 14px; border-radius: 999px; background: var(--yellow); color: var(--ink); font-weight: 900; font-size: 14px; letter-spacing: .12em; box-shadow: 0 6px 0 rgba(0,0,0,.35); }
+  .plan .name { font-weight: 900; letter-spacing: .2em; font-size: 17px; color: rgba(255,255,255,.75); }
+  .plan .price { font-family: 'Archivo Black'; font-size: var(--price); line-height: 1; margin: 8px 0 4px; }
+  .plan .price sup { font-size: .45em; vertical-align: .7em; margin-right: 2px; }
+  .plan .for { font-size: 16px; font-weight: 700; color: rgba(255,255,255,.7); margin-bottom: 14px; }
+  .plan ul { list-style: none; padding: 0; display: grid; gap: 9px; }
+  .plan li { display: flex; gap: 10px; font-size: var(--li); font-weight: 700; line-height: 1.25; }
+  .plan li::before { content: '✓'; flex: none; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 14px; font-weight: 900; background: rgba(46,230,168,.18); color: var(--mint); }
+  .plan.pro li::before { background: rgba(255,212,0,.22); color: var(--yellow); }
+
+  .cta { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+  .btn { font-family: 'Archivo Black'; font-size: var(--btn); color: var(--ink); background: var(--yellow); padding: 20px 30px; border-radius: 18px; box-shadow: 0 8px 0 #b38f00; white-space: nowrap; }
+  .perks { display: flex; flex-wrap: wrap; gap: 8px 16px; font-weight: 800; font-size: 17px; color: rgba(255,255,255,.75); }
+  .perks span::before { content: '● '; color: var(--mint); }
+
+  /* portrait 1080x1350 */
+  .portrait { --pad: 58px 58px 54px; --h1: 64px; --lede: 23px; --proofH: 330px; --proofGap: 34px 0 52px; --browserW: 620px; --phoneW: 210px; --phoneTop: -6px; --cols: 1fr 1fr; --planPad: 26px 26px 24px; --price: 64px; --li: 18px; --btn: 28px; }
+  /* story 1080x1920 */
+  .story { --pad: 150px 64px 230px; --h1: 82px; --lede: 28px; --proofH: 470px; --proofGap: 48px 0 78px; --browserW: 720px; --phoneW: 260px; --phoneTop: 10px; --cols: 1fr 1fr; --planPad: 30px 28px 28px; --price: 76px; --li: 20px; --btn: 32px; }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="grid"></div>
+  <div class="inner">
+    <div class="eyebrow"><i></i>WEB DEVELOPMENT · NOW BOOKING</div>
+    <h1>Websites that look sharp, load fast &amp; <em>get found.</em></h1>
+    <p class="lede">Custom-built sites for creators, small businesses and side projects. Mobile-first, SEO built in, live on your domain.</p>
+    <div class="proof">
+      <div class="browser"><div class="bar"><i></i><i></i><i></i><span>clutch-drive.vercel.app</span></div><img src="../assets/site-landing.png" alt="" /></div>
+      <div class="phone"><img src="../assets/site-hoops-phone.png" alt="" /></div>
+      <div class="scores"><div class="score"><b>100</b>SEO</div><div class="score"><b>100</b>Accessibility</div><div class="score"><b>98</b>Performance</div></div>
+      <div class="tag">RECENT BUILD · 3D SPORTS GAME SITE</div>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <div class="name">STARTER</div>
+        <div class="price"><sup>$</sup>250</div>
+        <div class="for">Get online, done right.</div>
+        <ul>
+          <li>1-page custom website</li>
+          <li>Mobile-friendly design</li>
+          <li>Contact form or booking link</li>
+          <li>Google-ready SEO basics</li>
+          <li>Domain + hosting setup</li>
+          <li>1 round of revisions</li>
+        </ul>
+      </div>
+      <div class="plan pro">
+        <div class="badge">MOST POPULAR</div>
+        <div class="name">PRO</div>
+        <div class="price"><sup>$</sup>500</div>
+        <div class="for">A site that grows your business.</div>
+        <ul>
+          <li>Up to 5 pages</li>
+          <li>Custom design + animations</li>
+          <li>Full SEO + share previews</li>
+          <li>Analytics + Search Console</li>
+          <li>Speed-tuned for 90+ scores</li>
+          <li>2 revisions + 30 days support</li>
+        </ul>
+      </div>
+    </div>
+    <div class="cta">
+      <div class="btn">DM me to start ➜</div>
+      <div class="perks"><span>Fast turnaround</span><span>Mobile-first</span><span>SEO built in</span></div>
+    </div>
+  </div>
+</div>
+<script>
+  const SIZES = { portrait: [1080, 1350], story: [1080, 1920] }
+  const size = new URLSearchParams(location.search).get('size') ?? 'portrait'
+  const [w, h] = SIZES[size]
+  document.documentElement.style.setProperty('--w', w + 'px')
+  document.documentElement.style.setProperty('--h', h + 'px')
+  document.getElementById('card').classList.add(size)
+  window.ready = Promise.all([document.fonts.ready, ...[...document.images].map((i) => i.decode().catch(() => {}))])
+</script>
+</body>
+</html>

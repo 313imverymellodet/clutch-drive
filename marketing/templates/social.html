@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Social card</title>
+<style>
+  @font-face { font-family: 'Archivo Black'; src: url(../assets/archivo-black-latin.woff2) format('woff2'); }
+  :root { --accent: #ffd400; --accent2: #2ecc71; --ink: #14161c; --bg: #0f1117; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: var(--w); height: var(--h); overflow: hidden; background: var(--bg); }
+  body { font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif; color: #fff; }
+  .card { position: relative; width: var(--w); height: var(--h); overflow: hidden; }
+  .hero { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .shade { position: absolute; inset: 0; background:
+      linear-gradient(180deg, rgba(10,11,15,.92) 0%, rgba(10,11,15,.55) 24%, rgba(10,11,15,0) 44%, rgba(10,11,15,0) 58%, rgba(10,11,15,.88) 84%, rgba(10,11,15,.97) 100%); }
+  .grain { position: absolute; inset: 0; opacity: .14; mix-blend-mode: overlay; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+  .stripe { position: absolute; width: 140%; height: 34px; left: -20%; background: repeating-linear-gradient(90deg, var(--accent) 0 60px, var(--ink) 60px 120px); transform: rotate(-6deg); opacity: .9; }
+
+  .brand { position: absolute; display: flex; align-items: center; gap: 16px; }
+  .brand .icon { width: 74px; height: 74px; border-radius: 20px; background: var(--accent); display: grid; place-items: center; font-size: 46px; box-shadow: 0 6px 0 var(--ink), 0 0 0 4px var(--ink); }
+  .brand .word { font-family: 'Archivo Black'; font-size: 38px; letter-spacing: .06em; text-shadow: 0 4px 0 rgba(0,0,0,.45); }
+  .brand .word small { display: block; font-family: -apple-system, system-ui; font-weight: 800; font-size: 17px; letter-spacing: .22em; color: var(--accent); margin-top: 2px; text-shadow: none; }
+
+  .headline { position: absolute; font-family: 'Archivo Black'; line-height: .9; transform: rotate(-3deg); transform-origin: left top; }
+  .headline span { display: block; color: #fff; text-shadow: 6px 6px 0 var(--ink), 0 10px 30px rgba(0,0,0,.5); }
+  .headline span:last-child { color: var(--accent); }
+
+  .sub { position: absolute; font-weight: 700; line-height: 1.32; color: #fff; padding: 16px 20px; border-radius: 18px; background: rgba(10,11,15,.72); border-left: 6px solid var(--accent); backdrop-filter: blur(6px); }
+
+  .meter { position: absolute; padding: 18px 22px; border-radius: 22px; background: rgba(12,13,18,.78); border: 2px solid rgba(255,255,255,.14); backdrop-filter: blur(6px); box-shadow: 0 18px 40px rgba(0,0,0,.4); }
+  .meter .lab { font-size: 15px; font-weight: 900; letter-spacing: .18em; opacity: .75; }
+  .meter .nums { font-family: 'Archivo Black'; font-size: 44px; margin: 4px 0 10px; display: flex; align-items: baseline; gap: 12px; }
+  .meter .nums .from { opacity: .5; font-size: 32px; }
+  .meter .nums .arrow { color: var(--accent); font-size: 30px; }
+  .meter .bar { position: relative; height: 16px; border-radius: 8px; background: rgba(255,255,255,.14); overflow: hidden; }
+  .meter .bar i { position: absolute; inset: 0 auto 0 0; border-radius: 8px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .meter .bar b { position: absolute; top: -3px; bottom: -3px; width: 4px; background: #fff; border-radius: 2px; opacity: .65; }
+
+  .stamp { position: absolute; font-family: 'Archivo Black'; color: var(--ink); background: var(--accent2); padding: 10px 18px; border-radius: 12px; transform: rotate(6deg); box-shadow: 0 6px 0 var(--ink), 0 0 0 4px var(--ink); letter-spacing: .03em; }
+
+  .polaroid { position: absolute; background: #fff; padding: 12px 12px 54px; border-radius: 14px; transform: rotate(5deg); box-shadow: 0 24px 50px rgba(0,0,0,.55); }
+  .polaroid img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+  .polaroid .cap { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; font-family: 'Archivo Black'; color: var(--ink); font-size: 26px; letter-spacing: .02em; }
+  .polaroid .tape { position: absolute; top: -16px; left: 50%; width: 120px; height: 34px; margin-left: -60px; background: rgba(255,212,0,.85); transform: rotate(-4deg); }
+
+  .result { position: absolute; background: #fff; color: var(--ink); border-radius: 18px; padding: 18px 22px; font-weight: 800; box-shadow: 0 8px 0 var(--ink), 0 0 0 4px var(--ink); transform: rotate(-3deg); line-height: 1.35; }
+  .result .rt { font-family: 'Archivo Black'; font-size: 22px; }
+  .result .rg { font-size: 34px; letter-spacing: 2px; margin-top: 4px; }
+
+  .bottom { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; gap: 18px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chips span { padding: 9px 16px; border-radius: 999px; border: 2px solid rgba(255,255,255,.3); font-weight: 800; font-size: 19px; background: rgba(255,255,255,.08); }
+  .cta { display: flex; align-items: center; gap: 22px; }
+  .btn { font-family: 'Archivo Black'; color: var(--ink); background: var(--accent); padding: 20px 34px; border-radius: 18px; font-size: 30px; box-shadow: 0 8px 0 var(--ink), 0 0 0 4px var(--ink); white-space: nowrap; }
+  .url { font-weight: 900; font-size: 24px; letter-spacing: .01em; }
+  .url small { display: block; font-size: 16px; font-weight: 700; opacity: .7; letter-spacing: .12em; margin-bottom: 2px; }
+
+  /* ---------- portrait 1080x1350 ---------- */
+  .portrait .brand { top: 56px; left: 60px; }
+  .portrait .headline { top: 180px; left: 60px; font-size: 118px; }
+  .portrait .sub { top: 556px; left: 60px; width: 580px; font-size: 26px; }
+  .portrait .meter { top: 196px; right: 54px; width: 290px; transform: rotate(3deg); }
+  .portrait .stamp { top: 490px; right: 48px; font-size: 20px; }
+  .portrait .polaroid { width: 300px; height: 300px; right: 64px; bottom: 300px; }
+  .portrait .stripe { bottom: 238px; }
+  .portrait .bottom { bottom: 60px; padding: 0 60px; }
+
+  /* ---------- story 1080x1920 ---------- */
+  .story .brand { top: 150px; left: 64px; }
+  .story .headline { top: 290px; left: 64px; font-size: 140px; }
+  .story .sub { top: 720px; left: 64px; width: 660px; font-size: 30px; }
+  .story .meter { top: 930px; left: 64px; width: 330px; transform: rotate(-2deg); }
+  .story .stamp { top: 1130px; left: 76px; font-size: 24px; transform: rotate(-4deg); }
+  .story .polaroid { width: 380px; height: 380px; right: 60px; top: 920px; }
+  .story .result { left: 64px; top: 1260px; }
+  .story .stripe { bottom: 452px; }
+  .story .bottom { bottom: 250px; padding: 0 64px; }
+  .story .btn { font-size: 34px; }
+
+  /* ---------- landscape 1600x900 ---------- */
+  .land .shade { background: linear-gradient(90deg, rgba(10,11,15,.96) 0%, rgba(10,11,15,.85) 34%, rgba(10,11,15,.15) 62%, rgba(10,11,15,0) 75%), linear-gradient(0deg, rgba(10,11,15,.6) 0%, rgba(10,11,15,0) 30%); }
+  .land .brand { top: 54px; left: 64px; }
+  .land .headline { top: 176px; left: 64px; font-size: 104px; }
+  .land .sub { top: 520px; left: 64px; width: 620px; font-size: 25px; }
+  .land .meter { top: 70px; right: 70px; width: 300px; transform: rotate(3deg); }
+  .land .stamp { top: 268px; right: 92px; font-size: 22px; }
+  .land .polaroid { width: 300px; height: 260px; right: 80px; bottom: 80px; }
+  .land .stripe { display: none; }
+  .land .bottom { bottom: 56px; padding: 0 64px; width: 900px; }
+  .land .chips span { font-size: 18px; }
+</style>
+</head>
+<body>
+<div class="card" id="card"></div>
+<script>
+  const GAMES = {
+    hoops: {
+      brand: 'CLUTCH HOOPS', tag: 'DAILY BASKETBALL', icon: '🏀', accent: '#ff7a1a', accent2: '#ffd400', bg: '#0f1117',
+      hero: 'hoops-rise', inset: 'hoops-air', insetLabel: 'BANG! 💦',
+      lines: ['DOWN 2.', '0:24 LEFT.', 'YOUR BALL.'],
+      sub: 'A real NBA ending every day. Call the set, read the defense, time your jumper at the top.',
+      chips: ['Real NBA endings', 'Live win probability', 'Free · no download'],
+      url: 'clutch-drive.vercel.app/hoops', meter: [31, 82], stamp: 'PERFECT RELEASE ✓',
+      result: ['Clutch Hoops #8 🏀', 'LAL 105–104 BOS ✅', '🟩🔒💦🔒🟩'],
+    },
+    football: {
+      brand: 'CLUTCH DRIVE', tag: 'DAILY FOOTBALL', icon: '🏈', accent: '#ffd400', accent2: '#2ecc71', bg: '#0e1410',
+      hero: 'nfl-throw', inset: 'nfl-td', insetLabel: 'TOUCHDOWN! 🏈',
+      lines: ['DOWN 4.', '2:08 LEFT.', 'YOUR CALL.'],
+      sub: 'A real NFL comeback every day. Pick the play, set your reads, then throw it yourself.',
+      chips: ['Real NFL moments', '18-play playbook', 'Free · no download'],
+      url: 'clutch-drive.vercel.app', meter: [25, 100], stamp: 'YOU BEAT HISTORY 🔥',
+      result: ['Clutch Drive #8 🏈', 'MIN 31–28 ATL ✅ 0:04 left', '🟩🟨🟩⏱️🟩🏈'],
+    },
+  }
+  const SIZES = { portrait: [1080, 1350], story: [1080, 1920], land: [1600, 900] }
+  const q = new URLSearchParams(location.search)
+  const g = GAMES[q.get('game') ?? 'hoops']
+  const size = q.get('size') ?? 'portrait'
+  const [w, h] = SIZES[size]
+  const root = document.documentElement
+  root.style.setProperty('--w', w + 'px')
+  root.style.setProperty('--h', h + 'px')
+  root.style.setProperty('--accent', g.accent)
+  root.style.setProperty('--accent2', g.accent2)
+  root.style.setProperty('--bg', g.bg)
+  const card = document.getElementById('card')
+  card.className = `card ${size}`
+  const [from, to] = g.meter
+  card.innerHTML = `
+    <img class="hero" src="../assets/${g.hero}-${size}.png" alt="" />
+    <div class="shade"></div>
+    <div class="stripe"></div>
+    <div class="brand"><div class="icon">${g.icon}</div><div class="word">${g.brand}<small>${g.tag} · NEW EVERY DAY</small></div></div>
+    <div class="headline">${g.lines.map((l) => `<span>${l}</span>`).join('')}</div>
+    <p class="sub">${g.sub}</p>
+    <div class="meter"><div class="lab">WIN PROBABILITY</div><div class="nums"><span class="from">${from}%</span><span class="arrow">➜</span><span>${to}%</span></div><div class="bar"><i style="width:${to}%"></i><b style="left:${from}%"></b></div></div>
+    <div class="stamp">${g.stamp}</div>
+    <div class="polaroid"><div class="tape"></div><img src="../assets/${g.inset}-${size === 'land' ? 'land' : 'portrait'}.png" alt="" /><div class="cap">${g.insetLabel}</div></div>
+    ${size === 'story' ? `<div class="result"><div class="rt">${g.result[0]}</div><div>${g.result[1]}</div><div class="rg">${g.result[2]}</div></div>` : ''}
+    <div class="bottom">
+      <div class="chips">${g.chips.map((c) => `<span>${c}</span>`).join('')}</div>
+      <div class="cta"><div class="btn">PLAY FREE ▶</div><div class="url"><small>NO DOWNLOAD · PHONE OR COMPUTER</small>${g.url}</div></div>
+    </div>
+    <div class="grain"></div>`
+  window.ready = Promise.all([document.fonts.ready, ...[...document.images].map((i) => i.decode().catch(() => {}))])
+</script>
+</body>
+</html>

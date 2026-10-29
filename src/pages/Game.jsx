@@ -31,6 +31,7 @@ import { TeamLogo, rosterFor, useRealData } from '../game/real'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
+import { captureCanvasProps } from '../capture'
 
 const SPIKE_RUNOFF = 3 // seconds to hustle to the line and clock it
 const MODES = { daily: 'Daily Drive', survivor: 'Survivor', practice: 'Practice' }
@@ -300,7 +301,7 @@ export default function Game({ mode: rawMode }) {
   return (
     <main className="game">
       <Suspense fallback={<div className="loading">Lacing up cleats…</div>}>
-        <Canvas dpr={[1, 2]} camera={{ fov: 45, position: [0, 14, los - 30], near: 0.1, far: 1000 }}>
+        <Canvas dpr={[1, 2]} camera={{ fov: 45, position: [0, 14, los - 30], near: 0.1, far: 1000 }} {...captureCanvasProps}>
           <PlayScene
             sim={sim}
             version={`${scenario.offense}-${scenario.defense}-${roster ? 'real' : 'generic'}`}

@@ -145,6 +145,17 @@ export default function PlayScene({ sim, version, offense, defense, onStatus, on
 }
 
 function updateCamera(sim, camera, size, rawDt) {
+  // capture mode: the recorder flies the camera itself ({ pos, look, fov })
+  if (import.meta.env.DEV && window.__cam) {
+    const c = window.__cam
+    if (c.fov && camera.fov !== c.fov) {
+      camera.fov = c.fov
+      camera.updateProjectionMatrix()
+    }
+    camera.position.set(...c.pos)
+    camera.lookAt(...c.look)
+    return
+  }
   const b = sim.ball
   const aspect = size.width / size.height
   const fov = aspect < 1 ? 58 : 45
