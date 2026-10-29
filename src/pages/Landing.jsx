@@ -6,6 +6,7 @@ import { TeamLogo, rosterFor, useRealData } from '../game/real'
 import { load } from '../game/storage'
 import { Link } from '../router'
 import { BRAND } from '../brand'
+import { WHATS_NEW } from '../seo'
 import { Logo } from '../ui/Logo'
 
 const HeroCanvas = lazy(() => import('../scenes/HeroCanvas'))
@@ -45,6 +46,7 @@ export default function Landing() {
   const played = load(`cd.daily.${key}`, null)
   const hoopsPlayed = load(`cd.hoops.${key}`, null)
   const surv = load('cd.survivor', { best: 0 })
+  const hoopsBest = load('cd.hoops.survivor', { best: 0 }).best
   const streak = load('cd.dailyStreak', { streak: 0 }).streak
   const hoopsStreak = load('cd.hoops.stats', { streak: 0 }).streak
   const showHero = useDeferredHero()
@@ -59,7 +61,8 @@ export default function Landing() {
         <div className="land-links">
           <Link to="/play?mode=survivor">Survivor</Link>
           <Link to="/h2h">Head-to-Head</Link>
-          <Link to="/hoops">🏀 Hoops <span className="new-pill">NEW</span></Link>
+          <Link to="/hoops">🏀 Hoops</Link>
+          <Link to="/whats-new">What’s new <span className="new-pill">V2</span></Link>
           <Link to="/how-to-play">How to play</Link>
           <Link to="/play?mode=daily" className="btn primary small">Play</Link>
         </div>
@@ -75,8 +78,11 @@ export default function Landing() {
           )}
         </div>
         <div className="hero-copy">
-          <div className="eyebrow pill">
-            <span className="dot" /> Daily Drive #{day} is live
+          <div className="eyebrow-row">
+            <div className="eyebrow pill">
+              <span className="dot" /> Daily Drive #{day} is live
+            </div>
+            <Link to="/whats-new" className="eyebrow pill v2-pill"><b>V2</b> New players, crowds &amp; modes →</Link>
           </div>
           <h1>
             <span className="h1-a">CLUTCH</span>
@@ -130,6 +136,31 @@ export default function Landing() {
         </div>
       </section>
 
+      <section className="v2" aria-labelledby="v2-h">
+        <div className="v2-head">
+          <span className="v2-badge">V2</span>
+          <h2 id="v2-h">What’s new</h2>
+          <p>New players with faces, 18 new animations, crowds that do the wave, night games and a new basketball mode.</p>
+        </div>
+        <div className="v2-grid">
+          {WHATS_NEW.filter((w) => w.image).slice(0, 4).map((w) => (
+            <Link key={w.id} to={`/whats-new#${w.id}`} className="v2-card">
+              <img src={w.image} alt={w.alt} width="1200" height={w.image.includes('players') ? 600 : 675} loading="lazy" decoding="async" />
+              <span className="v2-copy">
+                <b>{w.emoji} {w.title}</b>
+                <span>{w.text.split('. ')[0]}.</span>
+              </span>
+            </Link>
+          ))}
+        </div>
+        <div className="v2-more">
+          {WHATS_NEW.filter((w) => !w.image || WHATS_NEW.filter((x) => x.image).indexOf(w) >= 4).map((w) => (
+            <Link key={w.id} to={`/whats-new#${w.id}`} className="chip">{w.emoji} {w.title}</Link>
+          ))}
+          <Link to="/whats-new" className="btn small">Everything new →</Link>
+        </div>
+      </section>
+
       <section className="how">
         <h2>How it works</h2>
         <div className="how-grid">
@@ -159,8 +190,13 @@ export default function Landing() {
       <section className="modes">
         <Link to="/hoops" className="mode-card hoops">
           <span className="mode-emoji">🏀</span>
-          <h3>Clutch Hoops <span className="new-pill">NEW</span></h3>
+          <h3>Clutch Hoops</h3>
           <p>Down late, your ball. Call the set, read the coverage, time your jumper at the top. A new game every day.</p>
+        </Link>
+        <Link to="/hoops?mode=survivor" className="mode-card hoops-survivor">
+          <span className="mode-emoji">⛹️</span>
+          <h3>Hoops Survivor <span className="new-pill">NEW</span></h3>
+          <p>Real NBA endings back to back, each one tougher. One loss ends the run.{hoopsBest ? ` Your best: ${hoopsBest}.` : ''}</p>
         </Link>
         <Link to="/play?mode=daily" className="mode-card daily">
           <span className="mode-emoji">📅</span>
@@ -210,7 +246,7 @@ export default function Landing() {
       </main>
 
       <footer className="land-foot">
-        <p><Link to="/how-to-play">How to play</Link> · <Link to="/locker">Locker Room</Link> · <Link to="/play?mode=practice">Practice</Link> · <Link to="/hoops?mode=practice">Hoops practice</Link></p>
+        <p><Link to="/how-to-play">How to play</Link> · <Link to="/whats-new">What’s new in V2</Link> · <Link to="/locker">Locker Room</Link> · <Link to="/play?mode=practice">Practice</Link> · <Link to="/hoops?mode=practice">Hoops practice</Link></p>
         <p>{BRAND.disclaimer} NBA team names and colors are used the same way.</p>
         <p>{DATA_CREDIT} <a href="https://github.com/nflverse/nflverse-data" target="_blank" rel="noreferrer">nflverse</a></p>
       </footer>

@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
-import { MODEL_URL, SKIN_TONES, buildCharacter } from '../three/characters'
+import { MODEL_URL, SKIN_TONES, buildCharacter, footballLook } from '../three/characters'
 import { BlobShadow, Football } from '../components/Props'
 
-function Buddy({ team, skin, number, clip, delay = 0, ...props }) {
+function Buddy({ team, skin, number, role, clip, delay = 0, ...props }) {
   const gltf = useGLTF(MODEL_URL)
-  const { root, animator } = useMemo(() => buildCharacter(gltf, team, skin, number), [gltf, team, skin, number])
+  const { root, animator } = useMemo(() => buildCharacter(gltf, team, skin, number, footballLook(role, number, team.abbr)), [gltf, team, skin, number, role])
   useEffect(() => {
     const id = setTimeout(() => animator.play(clip, { restart: true }), delay)
     animator.play('Idle')
@@ -80,9 +80,9 @@ export default function HeroScene({ offense, defense }) {
       <directionalLight position={[3, 6, 5]} intensity={2.3} />
       <group ref={rig} position={[0, -0.2, 0]}>
         <Turf />
-        <Buddy team={offense} skin={SKIN_TONES[2]} number={8} clip="Celebrate" position={[0, 0, 0.5]} />
-        <Buddy team={offense} skin={SKIN_TONES[4]} number={18} clip="Catch" delay={500} position={[-1.4, 0, -0.2]} rotation-y={0.45} />
-        <Buddy team={defense} skin={SKIN_TONES[0]} number={24} clip="Stance" position={[1.4, 0, -0.2]} rotation-y={-0.5} />
+        <Buddy team={offense} skin={SKIN_TONES[2]} number={8} role="QB" clip="Flex" position={[0, 0, 0.5]} />
+        <Buddy team={offense} skin={SKIN_TONES[4]} number={18} role="WR" clip="Dance" delay={500} position={[-1.4, 0, -0.2]} rotation-y={0.45} />
+        <Buddy team={defense} skin={SKIN_TONES[0]} number={24} role="CB" clip="Ready" position={[1.4, 0, -0.2]} rotation-y={-0.5} />
         <SpinningBall />
       </group>
     </>

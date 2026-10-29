@@ -2,7 +2,7 @@
 // canonical URL, share card, structured data and crawlable text, plus sitemap.xml. The text sits inside
 // #root, so crawlers and no-JS visitors read it and the app replaces it the moment it starts.
 import { readFileSync, writeFileSync } from 'node:fs'
-import { FAQ, GUIDE, ROUTES, SITEMAP, SITE_NAME, SITE_URL, canonicalFor, structuredData } from '../src/seo.js'
+import { FAQ, GUIDE, ROUTES, SITEMAP, SITE_NAME, SITE_URL, WHATS_NEW, canonicalFor, structuredData } from '../src/seo.js'
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
@@ -42,10 +42,10 @@ function body(path) {
   if (path === '/') {
     // mirrors the landing page's hero so the swap to the live app is seamless
     return `<div class="landing">
-  <nav class="land-nav"><a href="/" class="land-logo"><span>CLUTCH DRIVE</span></a><div class="land-links"><a href="/play?mode=survivor">Survivor</a><a href="/h2h">Head-to-Head</a><a href="/hoops">🏀 Hoops</a><a href="/how-to-play">How to play</a><a href="/play?mode=daily" class="btn primary small">Play</a></div></nav>
+  <nav class="land-nav"><a href="/" class="land-logo"><span>CLUTCH DRIVE</span></a><div class="land-links"><a href="/play?mode=survivor">Survivor</a><a href="/h2h">Head-to-Head</a><a href="/hoops">🏀 Hoops</a><a href="/whats-new">What’s new</a><a href="/how-to-play">How to play</a><a href="/play?mode=daily" class="btn primary small">Play</a></div></nav>
   <main>
   <header class="hero"><div class="hero-canvas" aria-hidden="true"></div><div class="hero-copy">
-    <div class="eyebrow pill"><span class="dot"></span> A new Daily Drive every day</div>
+    <div class="eyebrow pill"><span class="dot"></span> V2 is here · a new Daily Drive every day</div>
     <h1><span class="h1-a">CLUTCH</span><span class="h1-b">DRIVE</span></h1>
     <p class="hero-tag">Trailing late. Clock running. Call the plays.</p>
     <div class="hero-ctas"><a href="/play?mode=daily" class="btn primary big">Play today’s drive</a><a href="/hoops" class="btn big">🏀 Daily Hoops</a></div>
@@ -56,7 +56,12 @@ function body(path) {
   </main>
 </div>`
   }
-  const guide = path === '/how-to-play' ? GUIDE.map((g) => `<section id="${g.id}"><h2>${esc(g.title)}</h2>${g.items.map(([h, t]) => `<h3>${esc(h)}</h3><p>${esc(t)}</p>`).join('')}</section>`).join('') + faqHtml() : ''
+  const guide =
+    path === '/how-to-play'
+      ? GUIDE.map((g) => `<section id="${g.id}"><h2>${esc(g.title)}</h2>${g.items.map(([h, t]) => `<h3>${esc(h)}</h3><p>${esc(t)}</p>`).join('')}</section>`).join('') + faqHtml()
+      : path === '/whats-new'
+        ? WHATS_NEW.map((w) => `<section id="${w.id}"><h2>${esc(w.title)}</h2>${w.image ? `<img src="${w.image}" alt="${esc(w.alt)}" width="1200" height="${w.image.includes('players') ? 600 : 675}" loading="lazy" />` : ''}<p>${esc(w.text)}</p></section>`).join('')
+        : ''
   return `<div class="seo-shell">
   <header class="seo-top"><a href="/">${path === '/hoops' ? '🏀 Clutch Hoops' : '🏈 Clutch Drive'}</a></header>
   <main><h1>${esc(r.h1)}</h1>${r.intro.map((p) => `<p>${esc(p)}</p>`).join('')}${links(r.links)}${guide}<p class="seo-loading">Loading the game…</p></main>

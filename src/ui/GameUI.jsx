@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import confetti from 'canvas-confetti'
+import { celebrate } from './Confetti'
 import { COVERAGES, PLAYS } from '../sim/playSim'
 import { FAMILIES } from '../sim/playbook'
 import { isMuted, onMuteChange, setMuted, sfx, unlock } from '../game/sound'
 import { downAndDistance, fmtBallOn, fmtClock, QUARTER_LABEL } from '../game/drive'
 import { TeamLogo } from '../game/real'
+import { trackEvent } from '../analytics'
 
 // ------------------------------------------------------------------ scorebug
 export function Scorebug({ drive, offense, defense, clock, running }) {
@@ -184,16 +185,8 @@ export function headlineFor(result) {
 export function ResultBanner({ result, message }) {
   const h = headlineFor(result)
   useEffect(() => {
-    if (result?.kind !== 'touchdown') return
-    const colors = ['#ffd400', '#ffffff', '#ff5a36', '#2f6cff']
-    confetti({ particleCount: 140, spread: 80, origin: { y: 0.55 }, colors, disableForReducedMotion: true })
-    setTimeout(() => confetti({ particleCount: 90, angle: 60, spread: 60, origin: { x: 0, y: 0.7 }, colors, disableForReducedMotion: true }), 250)
-    setTimeout(() => confetti({ particleCount: 90, angle: 120, spread: 60, origin: { x: 1, y: 0.7 }, colors, disableForReducedMotion: true }), 400)
-    try {
-      navigator.vibrate?.([60, 40, 120])
-    } catch {
-      /* not supported */
-    }
+    // the touchdown buzz comes from the sound router (src/game/sound.js), which respects the haptics setting
+    if (result?.kind === 'touchdown') celebrate()
   }, [result])
   if (!h) return null
   return (
@@ -217,12 +210,14 @@ export function DriveStrip({ plays }) {
 }
 
 // ------------------------------------------------------------------ share
-export function ShareButton({ text, label = 'Share result' }) {
+export function ShareButton({ text, label = 'Share result', event = null }) {
   const [copied, setCopied] = useState(false)
   const share = async () => {
+    const sent = (method) => event && trackEvent('share', { mode: event, method })
     try {
       if (navigator.share && matchMedia('(pointer: coarse)').matches) {
         await navigator.share({ text })
+        sent('native')
         return
       }
     } catch {
@@ -230,9 +225,11 @@ export function ShareButton({ text, label = 'Share result' }) {
     }
     try {
       await navigator.clipboard.writeText(text)
+      sent('clipboard')
       setCopied(true)
       setTimeout(() => setCopied(false), 1800)
     } catch {
+      sent('prompt')
       window.prompt('Copy your result:', text)
     }
   }

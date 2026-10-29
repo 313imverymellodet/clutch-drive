@@ -10,7 +10,7 @@ export const openTone = (open) => (open > 0.4 ? '#2ecc71' : open > -0.4 ? '#ffd4
 export function LiveRings({ sim, enabled }) {
   const refs = useRef([])
   useFrame(() => {
-    const c = enabled ? sim.controls() : null
+    const c = enabled && !(import.meta.env.DEV && window.__cam) ? sim.controls() : null
     for (let i = 0; i < 3; i++) {
       const g = refs.current[i]
       if (!g) continue

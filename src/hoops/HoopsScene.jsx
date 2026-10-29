@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
-import { HOOPS_MODEL_URL, SKIN_TONES, buildHoopsCharacter, handWorld } from '../three/characters'
+import { HOOPS_MODEL_URL, SKIN_TONES, buildHoopsCharacter, handWorld, hoopsLook } from '../three/characters'
+import { getSettings, reducedMotion } from '../game/settings'
 import { FIXED_DT, RIM_HEIGHT } from './sim'
 import { HOOP } from './sets'
 import { hoopsUniform, numberStyle } from './teams'
@@ -231,7 +232,7 @@ const ballHand = new THREE.Vector3()
  * Draws a HoopsSim: 10 players, the ball, the court. `version` rebuilds the characters (new teams/roster).
  * offense/defense: NBA team objects; offenseAway: the offense wears white.
  */
-export default function HoopsScene({ sim, version, offense, defense, offenseAway, home, onStatus, onEvent, controls = false, onPass, tension = 0, board: boardHint = '' }) {
+export default function HoopsScene({ sim, version, offense, defense, offenseAway, home, onStatus, onEvent, controls = false, onPass, tension = 0, board: boardHint = '', distract = false }) {
   const gltf = useGLTF(HOOPS_MODEL_URL)
   const { camera, size } = useThree()
   const ballRef = useRef()
@@ -239,7 +240,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
   const shadowRefs = useRef([])
   const lastStatus = useRef('')
   const acc = useRef(0)
-  const [excited, setExcited] = useState(false)
+  const [reaction, setReaction] = useState(null) // { home, away, groan } for a few seconds after a big play
   const [moment, setMoment] = useState('') // big-play LED message for a few seconds
   const homeIsOffense = offense === home
   const markerRef = useRef()
@@ -252,9 +253,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
       sim.players.map((p, i) => {
         const team = p.team === 'off' ? offense : defense
         const away = p.team === 'off' ? offenseAway : !offenseAway
-        const a = buildHoopsCharacter(gltf, hoopsUniform(team, { away, hair: i * 5 + (p.team === 'off' ? 0 : 3) }), SKIN_TONES[(i * 7 + 2) % SKIN_TONES.length], p.number, numberStyle(team, away))
-        const grow = { PG: 0.93, SG: 0.97, SF: 1, PF: 1.05, C: 1.09 }[p.key] ?? { dPG: 0.93, dSG: 0.97, dSF: 1, dPF: 1.05, dC: 1.09 }[p.key] ?? 1
-        a.root.scale.multiplyScalar(grow)
+        const a = buildHoopsCharacter(gltf, hoopsUniform(team, { away, hair: i * 5 + (p.team === 'off' ? 0 : 3) }), SKIN_TONES[(i * 7 + 2) % SKIN_TONES.length], p.number, numberStyle(team, away), hoopsLook(p.slot ?? p.key, p.number, team.abbr))
         return a
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -264,13 +263,25 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
   useEffect(() => {
     lastStatus.current = ''
     acc.current = 0
-    setExcited(false)
+    setReaction(null)
   }, [version, sim])
   useEffect(() => {
-    if (!moment) return
-    const id = setTimeout(() => (setMoment(''), setExcited(false)), 3800)
+    if (!reaction) return
+    const id = setTimeout(() => (setMoment(''), setReaction(null)), 3800)
     return () => clearTimeout(id)
-  }, [moment])
+  }, [reaction])
+  // both sides of the building: the home crowd hums with the tension, the visitors' pocket a little less;
+  // a big play sends one side up and the other into its hands. Late and close, the phone lights come out.
+  const mood = useMemo(
+    () => ({
+      home: reaction?.home ?? tension,
+      away: reaction?.away ?? tension * 0.6,
+      groan: reaction?.groan ?? 0,
+      distract: distract ? 1 : 0,
+      lights: tension >= 0.25 ? 1 : 0,
+    }),
+    [reaction, tension, distract],
+  )
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 1 / 20) * sim.timeScale
@@ -324,7 +335,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
     // a marker over the ball handler you control
     if (markerRef.current) {
       const B = sim.ball.state === 'held' ? sim.ball.holder : null
-      markerRef.current.visible = !!(controls && B && B.team === 'off')
+      markerRef.current.visible = !!(controls && B && B.team === 'off') && !(import.meta.env.DEV && window.__cam)
       if (B) {
         markerRef.current.position.set(B.pos.x, 9.6 + Math.sin(performance.now() / 180) * 0.25, B.pos.z)
         markerRef.current.rotation.y += rawDt * 3
@@ -348,11 +359,16 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
       // the home crowd goes off for home buckets and home stops
       const r = sim.result
       if (r && sim.phase === 'dead') {
-        const homeScored = r.points > 0 && homeIsOffense
-        const homeStop = !homeIsOffense && ['miss', 'steal', 'shotclock', 'clock'].includes(r.kind)
-        if (homeScored || homeStop) {
-          setExcited(true)
-          setMoment(homeScored ? (r.points === 3 ? 'THREE' : 'BUCKET') : 'STOP')
+        const scored = r.points > 0
+        const stop = ['miss', 'steal', 'shotclock', 'clock'].includes(r.kind)
+        const homeGood = (scored && homeIsOffense) || (stop && !homeIsOffense)
+        const awayGood = (scored && !homeIsOffense) || (stop && homeIsOffense)
+        if (homeGood) {
+          setReaction({ home: 1, away: 0, groan: 0 })
+          setMoment(scored ? (r.points === 3 ? 'THREE' : 'BUCKET') : 'STOP')
+        } else if (awayGood) {
+          // the visitors' corner goes off; the home crowd holds its head (harder when they scored)
+          setReaction({ home: 0.05, away: 1, groan: scored ? 1 : 0.6 })
         }
       }
     }
@@ -367,7 +383,7 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
       <pointLight position={[0, 30, 10]} intensity={300} distance={90} />
       <Court home={home} />
       <Hoop netRef={netRef} />
-      <Arena home={home} away={home === offense ? defense : offense} excite={excited ? 1 : tension} board={moment || boardHint} />
+      <Arena home={home} away={home === offense ? defense : offense} mood={mood} board={moment || boardHint} />
       <mesh ref={markerRef} visible={false}>
         <octahedronGeometry args={[0.7, 0]} />
         <meshBasicMaterial color="#ffd400" toneMapped={false} />
@@ -391,6 +407,17 @@ export default function HoopsScene({ sim, version, offense, defense, offenseAway
 }
 
 function updateCamera(sim, camera, size, rawDt) {
+  // capture mode: the recorder flies the camera itself ({ pos, look, fov })
+  if (import.meta.env.DEV && window.__cam) {
+    const c = window.__cam
+    if (c.fov && camera.fov !== c.fov) {
+      camera.fov = c.fov
+      camera.updateProjectionMatrix()
+    }
+    camera.position.set(...c.pos)
+    camera.lookAt(...c.look)
+    return
+  }
   const aspect = size.width / size.height
   const fov = aspect < 1 ? 62 : 46
   if (camera.fov !== fov) {
@@ -400,8 +427,18 @@ function updateCamera(sim, camera, size, rawDt) {
   // broadcast: high above half court looking down at the floor, drifting with the ball; portrait pulls back
   const pull = THREE.MathUtils.clamp(1.4 / aspect, 1, 1.75)
   const b = sim.ball
+  const s = sim.shot
+  if ((sim.phase === 'dead' || sim.phase === 'over') && sim.result?.points > 0 && s?.shooter && (s.three || s.shooter.dunk || s.buzzer) && !reducedMotion()) {
+    // a big bucket: push in on the shooter while he holds the follow-through (or flexes after the dunk)
+    const p = s.shooter.pos
+    focus.lerp(camGoal.set(p.x, 0, p.z), Math.min(1, rawDt * 2))
+    camGoal.set(focus.x * 0.7, 13 * pull, focus.z + 22 + (pull - 1) * 12)
+    camera.position.lerp(camGoal, Math.min(1, rawDt * 1.6))
+    camera.lookAt(focus.x, 4, focus.z)
+    return
+  }
   const bz = Math.min(32, b.pos.z)
-  const [H, D, LZ, LY] = CAM
+  const [H, D, LZ, LY] = { low: [17, 52, 13, 5], high: [54, 38, 14, 0] }[getSettings().hoopsCamera] ?? CAM
   focus.lerp(camGoal.set(b.pos.x * 0.3, 0, LZ + bz * 0.2), Math.min(1, rawDt * 2))
   camGoal.set(focus.x * 0.5, H * pull, D + (pull - 1) * 30)
   camera.position.lerp(camGoal, Math.min(1, rawDt * 2.5))

@@ -7,26 +7,45 @@ import { aiCoverage, aiSet, aiWillFoul, applyFoul, applyPossession, boostsFor, f
 import { hoopsSound, hsfx, setChant } from '../hoops/sound'
 import { CoveragePicker, FreeThrows, HoopsBug, HoopsControls, NbaTeamSelect, SetPicker, hoopsHeadline } from '../hoops/HoopsUI'
 import { Countdown, ShareButton, WPChart, WinProbMeter } from '../ui/GameUI'
-import { HOOPS_DATA_CREDIT, HOOPS_DATA_URL, hoopsMomentForDay, hoopsMomentLabel, hoopsRealOutcome, scenarioFromHoopsMoment } from '../hoops/moments'
+import { HOOPS_DATA_CREDIT, HOOPS_DATA_URL, hoopsMomentForDay, hoopsMomentForSurvivor, hoopsMomentLabel, hoopsRealOutcome, scenarioFromHoopsMoment } from '../hoops/moments'
 import { TeamLogo } from '../game/real'
 import { dayNumber, todayKey } from '../game/drive'
 import { load, save } from '../game/storage'
 import { preloadHoops, setAmbienceLevel, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
+import { captureCanvasProps } from '../capture'
+import { Confetti } from '../ui/Confetti'
+import { resultOf, trackEvent } from '../analytics'
 
 const HoopsScene = lazy(() => import('../hoops/HoopsScene'))
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 const meterTeam = (t) => ({ endzone: t.jersey, stripe: t.trim })
+const newRunId = () => Math.random().toString(36).slice(2, 8)
+const MODES = ['daily', 'survivor', 'practice']
 
 export default function Hoops({ mode: rawMode }) {
-  const mode = rawMode === 'practice' ? 'practice' : 'daily'
+  const mode = MODES.includes(rawMode) ? rawMode : 'daily'
   const dateKey = todayKey()
   const day = dayNumber(dateKey)
   const [practice, setPractice] = useState(() => load('cd.hoops.practice', { you: 'LAL', them: 'BOS', n: 0 }))
+  // Survivor: real endings back to back, each one a tougher spot; one loss ends the run
+  const [survivor, setSurvivor] = useState(() => {
+    const s = load('cd.hoops.survivor', { runId: newRunId(), game: 0, streak: 0, best: 0 })
+    // a finished game never replays: a loss starts a new run, a win moves on to the next game
+    if (s.lostAt != null) return { runId: newRunId(), game: 0, streak: 0, best: s.best }
+    if (s.cleared === s.game) return { ...s, game: s.game + 1 }
+    return s
+  })
   const scenario = useMemo(
-    () => (mode === 'daily' ? scenarioFromHoopsMoment(hoopsMomentForDay(dateKey), `daily-${dateKey}`) : makeScenario(`practice-${practice.n}`, { you: practice.you, them: practice.them })),
-    [mode, dateKey, practice.n, practice.you, practice.them],
+    () =>
+      mode === 'daily'
+        ? scenarioFromHoopsMoment(hoopsMomentForDay(dateKey), `daily-${dateKey}`)
+        : mode === 'survivor'
+          ? scenarioFromHoopsMoment(hoopsMomentForSurvivor(survivor.runId, survivor.game), `surv-${survivor.runId}-${survivor.game}`)
+          : makeScenario(`practice-${practice.n}`, { you: practice.you, them: practice.them }),
+    [mode, dateKey, survivor.runId, survivor.game, practice.n, practice.you, practice.them],
   )
+  const difficulty = mode === 'survivor' ? Math.min(4, survivor.game) : 0
   const saved = mode === 'daily' ? load(`cd.hoops.${dateKey}`, null) : null
   const you = NBA_BY_ABBR[scenario.you]
   const them = NBA_BY_ABBR[scenario.them]
@@ -76,7 +95,7 @@ export default function Hoops({ mode: rawMode }) {
           setCtx({ team: 'you', foul: true, start })
           return setStage('ft')
         }
-        const cov = aiCoverage(cur)
+        const cov = aiCoverage(cur, difficulty)
         presnap('pnr', { call: cov.shown, shown: cov.shown })
         setCtx({ team: 'you', coverage: cov })
         return setStage('call')
@@ -86,7 +105,7 @@ export default function Hoops({ mode: rawMode }) {
       setCtx({ team: 'them', ai })
       setStage('defcall')
     },
-    [presnap],
+    [presnap, difficulty],
   )
 
   const tipOff = () => {
@@ -94,6 +113,7 @@ export default function Hoops({ mode: rawMode }) {
     startAmbience('hoops-crowd')
     hsfx.whistle()
     begin(g)
+    trackEvent('game_start', { mode: `hoops-${mode}` })
   }
   useEffect(() => {
     preloadHoops()
@@ -214,18 +234,36 @@ export default function Hoops({ mode: rawMode }) {
   useEffect(() => {
     if (stage !== 'over' || g.status === 'playing' || finished.current === g.id) return
     finished.current = g.id
+    trackEvent('game_end', { mode: `hoops-${mode}`, result: resultOf(g.status === 'won', scenario.moment) })
     if (mode === 'daily' && !load(`cd.hoops.${dateKey}`, null)) {
-      save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: `${SITE}/hoops`, mode, moment: scenario.moment }), grid: g.log.map((p) => p.emoji).join('') })
+      save(`cd.hoops.${dateKey}`, { status: g.status, text: shareText(g, { day, url: SITE, mode, moment: scenario.moment }), grid: g.log.map((p) => p.emoji).join('') })
       // daily stats: played, wins, streak (a streak needs yesterday's game too)
       const st = load('cd.hoops.stats', { last: null, streak: 0, played: 0, wins: 0 })
       const won = g.status === 'won'
       const yesterday = todayKey(new Date(Date.now() - 86400000))
       save('cd.hoops.stats', { last: dateKey, played: st.played + 1, wins: st.wins + (won ? 1 : 0), streak: won ? (st.last === yesterday ? st.streak + 1 : 1) : 0 })
     }
+    if (mode === 'survivor') {
+      const won = g.status === 'won'
+      const next = won ? { ...survivor, streak: survivor.streak + 1, best: Math.max(survivor.best, survivor.streak + 1), cleared: survivor.game } : { ...survivor, lostAt: survivor.streak }
+      save('cd.hoops.survivor', next)
+      setSurvivor(next)
+    }
     setChant(false)
     hsfx.horn()
     if (g.status === 'won') setTimeout(() => hsfx.theme(), 1600)
   }, [stage, g, mode, dateKey, day]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const nextSurvivorGame = () => {
+    const next = { ...survivor, game: survivor.game + 1 }
+    save('cd.hoops.survivor', next)
+    setSurvivor(next)
+  }
+  const newSurvivorRun = () => {
+    const next = { runId: newRunId(), game: 0, streak: 0, best: survivor.best }
+    save('cd.hoops.survivor', next)
+    setSurvivor(next)
+  }
 
   const newPractice = (teams = {}) => {
     const p = { ...practice, ...teams, n: practice.n + 1 }
@@ -256,7 +294,7 @@ export default function Hoops({ mode: rawMode }) {
   return (
     <main className="game hoops">
       <Suspense fallback={<div className="loading">Lacing up sneakers…</div>}>
-        <Canvas dpr={[1, 2]} camera={{ fov: 46, position: [0, 40, 50], near: 0.5, far: 600 }}>
+        <Canvas dpr={[1, 2]} camera={{ fov: 46, position: [0, 40, 50], near: 0.5, far: 600 }} {...captureCanvasProps}>
           <HoopsScene
             sim={sim}
             version={`${scenario.id}-${youOffense}`}
@@ -267,6 +305,7 @@ export default function Hoops({ mode: rawMode }) {
             onStatus={onStatus}
             onEvent={(e) => hoopsSound(e, { youOffense, youHome: scenario.youHome })}
             tension={tension}
+            distract={stage === 'ft' && !scenario.youHome}
             board={homeOnDefense && (stage === 'live' || stage === 'call' || stage === 'defcall') && tense ? 'DEFENSE' : ''}
             controls={live && !replaying && youOffense}
             onPass={(key) => sim.input({ type: 'pass', key })}
@@ -291,7 +330,7 @@ export default function Hoops({ mode: rawMode }) {
       <div className="hud-bottom">
         {stage === 'intro' && (
           <div className="intro card">
-            <div className="eyebrow">{mode === 'daily' ? `Daily Hoops #${day}` : 'Practice'} · Clutch Hoops beta</div>
+            <div className="eyebrow">{mode === 'daily' ? `Daily Hoops #${day}` : mode === 'survivor' ? `Survivor · Game ${survivor.game + 1}${survivor.streak ? ` · ${survivor.streak} straight` : ''}` : 'Practice'} · Clutch Hoops</div>
             {scenario.moment && <span className="moment-tag">📅 Real moment · {hoopsMomentLabel(scenario.moment)}</span>}
             <h2>
               <TeamLogo abbr={you.abbr} league="nba" size={34} className="team-logo intro-logo" />
@@ -346,7 +385,19 @@ export default function Hoops({ mode: rawMode }) {
         )}
       </div>
 
-      {stage === 'over' && <HoopsOver g={saved && g.status === 'playing' ? null : g} moment={scenario.moment} saved={saved} mode={mode} day={day} onAgain={() => (mode === 'daily' ? navigate('/hoops?mode=practice') : newPractice())} />}
+      {stage === 'over' && (
+        <HoopsOver
+          g={saved && g.status === 'playing' ? null : g}
+          moment={scenario.moment}
+          saved={saved}
+          mode={mode}
+          day={day}
+          survivor={survivor}
+          onNextSurvivor={nextSurvivorGame}
+          onNewRun={newSurvivorRun}
+          onAgain={() => (mode === 'practice' ? newPractice() : navigate('/hoops?mode=practice'))}
+        />
+      )}
     </main>
   )
 }
@@ -377,9 +428,9 @@ function defTip(g) {
   return null
 }
 
-function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
+function HoopsOver({ g, moment, saved, mode, day, survivor, onNextSurvivor, onNewRun, onAgain }) {
   const won = g ? g.status === 'won' : saved?.status === 'won'
-  const text = g ? shareText(g, { day, url: `${SITE}/hoops`, mode, moment }) : saved?.text
+  const text = g ? shareText(g, { day, url: SITE, mode, moment, streak: survivor.streak }) : saved?.text
   // stats are saved by the parent right after this mounts, so re-read them a beat later
   const [stats, setStats] = useState(() => load('cd.hoops.stats', { played: 0, wins: 0, streak: 0 }))
   useEffect(() => {
@@ -388,6 +439,7 @@ function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
   }, [])
   return (
     <div className="modal-wrap">
+      {g && won && <Confetti />}
       <div className={`modal ${won ? 'won' : 'lost'}`}>
         <div className="modal-emoji">{won ? '🏆' : '😤'}</div>
         <h2>{won ? 'Ballgame!' : 'So close.'}</h2>
@@ -409,9 +461,18 @@ function HoopsOver({ g, moment, saved, mode, day, onAgain }) {
             <div><b>{stats.streak}</b><span>Streak</span></div>
           </div>
         )}
+        {mode === 'survivor' && (
+          <div className="stats">
+            <div><b>{survivor.streak}</b><span>{won ? 'Streak' : 'Final streak'}</span></div>
+            <div><b>{survivor.best}</b><span>Best</span></div>
+          </div>
+        )}
         <div className="modal-actions">
-          {text && <ShareButton text={text} />}
-          <button className="btn" onClick={onAgain}>{mode === 'daily' ? 'Practice' : 'New game'}</button>
+          {text && <ShareButton text={text} event={`hoops-${mode}`} />}
+          {mode === 'survivor' && won && <button className="btn primary" onClick={onNextSurvivor}>Next game →</button>}
+          {mode === 'survivor' && !won && <button className="btn" onClick={onNewRun}>Start a new run</button>}
+          {mode === 'daily' && <button className="btn" onClick={() => navigate('/hoops?mode=survivor')}>Play Survivor</button>}
+          <button className="btn" onClick={onAgain}>{mode === 'practice' ? 'New game' : 'Practice'}</button>
           <button className="btn" onClick={() => navigate('/play?mode=daily')}>🏈 Today’s Daily Drive</button>
         </div>
         {mode === 'daily' && <p className="fine">Next game in <Countdown /></p>}

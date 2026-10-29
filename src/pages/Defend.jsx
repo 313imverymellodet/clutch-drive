@@ -9,12 +9,15 @@ import { load, save } from '../game/storage'
 import { FieldBar, Scorebug, ShareButton, WPChart, WinProbMeter, wpTrail } from '../ui/GameUI'
 import { winProb } from '../game/winprob'
 import { momentForDay } from '../game/moments'
+import { isNightGame } from '../components/Stadium'
+import { Confetti } from '../ui/Confetti'
 import { TeamSelect } from '../ui/TeamSelect'
 import { DefensePicker } from '../ui/Playbook'
 import { playEvent, sfx, startAmbience, stopAmbience, unlock } from '../game/sound'
 import { Link, navigate } from '../router'
 import { BRAND } from '../brand'
 import { rosterFor, useRealData } from '../game/real'
+import { resultOf, trackEvent } from '../analytics'
 
 const SITE = typeof location !== 'undefined' ? location.origin : ''
 const AI_HUDDLE = 12 // seconds a running clock burns while their offense lines up
@@ -114,6 +117,7 @@ export default function Defend({ daily: isDaily }) {
     startAmbience()
     sfx.whistle(0.25)
     setStage('call')
+    trackEvent('game_start', { mode: isDaily ? 'defense-daily' : 'defense' })
   }
 
   const lock = () => {
@@ -203,6 +207,7 @@ export default function Defend({ daily: isDaily }) {
   useEffect(() => {
     if (stage !== 'over' || drive.status === 'playing' || finished.current === scenario.id) return
     finished.current = scenario.id
+    trackEvent('game_end', { mode: isDaily ? 'defense-daily' : 'defense', result: resultOf(youWon) })
     if (!isDaily) {
       const streak = youWon ? prefs.streak + 1 : 0
       const nextPrefs = { ...prefs, streak, best: Math.max(prefs.best, streak) }
@@ -231,6 +236,7 @@ export default function Defend({ daily: isDaily }) {
             onStatus={onStatus}
             onEvent={playEvent}
             homeIsDefense
+            night={isDaily && isNightGame(momentForDay(dateKey))}
             los={inPlay ? sim.los : drive.ballOn - 50}
             firstDown={inPlay ? (sim.firstDown >= 50 ? null : sim.firstDown) : firstDownZ >= 50 ? null : firstDownZ}
           />
@@ -311,6 +317,7 @@ export default function Defend({ daily: isDaily }) {
 
       {stage === 'over' && (
         <div className="modal-wrap">
+          {youWon && <Confetti />}
           <div className={`modal ${youWon ? 'won' : 'lost'}`}>
             <div className="modal-emoji">{youWon ? '🛡️' : '💀'}</div>
             <h2>{youWon ? 'You held on!' : 'They scored.'}</h2>
@@ -327,6 +334,7 @@ export default function Defend({ daily: isDaily }) {
             )}
             <div className="modal-actions">
               <ShareButton
+                event={isDaily ? 'defense-daily' : 'defense'}
                 text={`${BRAND.name} 🛡️ ${isDaily ? `#${day} defense` : 'Defense'}\n${you.abbr} ${drive.scoreDef}–${drive.scoreOff} ${them.abbr} ${youWon ? '✅ held on' : '❌ gave it up'}\n${grid}\n${SITE}/play?mode=defense`}
               />
               <button className="btn" onClick={replay}>↺ Replay last play</button>

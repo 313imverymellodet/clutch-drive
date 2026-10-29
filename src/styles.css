@@ -50,10 +50,12 @@ a { color: inherit; }
   padding: 8px 16px; padding-top: max(8px, env(safe-area-inset-top));
   background: var(--ink); color: #fff; z-index: 5;
 }
-.brand { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+.brand { display: flex; align-items: center; gap: 8px; text-decoration: none; flex-shrink: 0; }
 .title { font-family: var(--display); letter-spacing: 0.03em; font-size: 16px; white-space: nowrap; }
-.tabs { display: flex; gap: 2px; background: var(--ink-2); padding: 3px; border-radius: 999px; }
-.tabs a { text-decoration: none; padding: 6px 12px; border-radius: 999px; font-weight: 800; font-size: 13px; color: #cfd3da; }
+/* on phones the tabs scroll sideways instead of pushing the mute button off-screen */
+.tabs { display: flex; gap: 2px; background: var(--ink-2); padding: 3px; border-radius: 999px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs a { flex-shrink: 0; white-space: nowrap; text-decoration: none; padding: 6px 12px; border-radius: 999px; font-weight: 800; font-size: 13px; color: #cfd3da; }
 .tabs a.on { background: var(--accent); color: var(--ink); }
 .stage { position: relative; flex: 1; min-height: 0; }
 .stage canvas { touch-action: none; }
@@ -317,7 +319,8 @@ a { color: inherit; }
 }
 
 /* ------------------------------------------------------------------ v2: read, field bar, previews, skip */
-.top-right { display: flex; align-items: center; gap: 8px; }
+.top-right { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.top-right > button { flex-shrink: 0; }
 .icon-btn { border: 0; background: var(--ink-2); color: #fff; width: 34px; height: 34px; border-radius: 50%; font-size: 16px; display: grid; place-items: center; }
 .icon-btn:hover { background: #3a3f4b; }
 
@@ -631,3 +634,59 @@ a { color: inherit; }
 .faq { background: #fff; border: 2.5px solid var(--ink); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; }
 .faq summary { font-weight: 900; cursor: pointer; }
 .faq p { margin: 8px 0 2px; }
+
+/* ------------------------------------------------------------------ v2: settings sheet */
+.settings-wrap { position: relative; flex-shrink: 0; }
+.settings-sheet {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 260px;
+  background: #fff; color: var(--ink); border-radius: 16px; padding: 12px 14px 14px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  display: grid; gap: 10px; font-size: 14px; font-weight: 700;
+}
+.settings-title { font-family: var(--display); font-size: 15px; letter-spacing: 0.02em; }
+.set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.set-row.col { flex-direction: column; align-items: stretch; gap: 6px; }
+.set-row small { display: block; font-weight: 600; font-size: 11px; color: #6b7280; }
+.set-row input[type='checkbox'] { width: 20px; height: 20px; accent-color: var(--accent); }
+.set-row input[type='range'] { width: 130px; accent-color: var(--accent); }
+.seg { display: flex; background: #eef0f3; border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { flex: 1; border: 0; background: transparent; border-radius: 999px; padding: 6px 4px; font-weight: 800; font-size: 12px; color: #4b5563; cursor: pointer; }
+.seg button.on { background: var(--ink); color: #fff; }
+.locker-sport { max-width: 320px; margin: 0 auto 8px; }
+
+/* ------------------------------------------------------------------ v2: landing section + what's new page */
+.eyebrow-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.v2-pill { text-decoration: none; background: #fff; color: var(--ink); border: 2px solid var(--ink); }
+.v2-pill b { background: var(--ink); color: var(--accent); border-radius: 999px; padding: 1px 7px; font-size: 10px; letter-spacing: 0.06em; }
+.v2-pill:hover { background: var(--accent); }
+.v2-badge { display: inline-block; font-family: var(--display); font-size: 14px; letter-spacing: 0.06em; background: var(--ink); color: var(--accent); padding: 4px 10px; border-radius: 8px; transform: rotate(-3deg); box-shadow: 3px 3px 0 var(--accent-2); }
+.v2 { max-width: 1100px; margin: 0 auto; padding: 18px 20px 28px; }
+.v2-head { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 12px; margin-bottom: 14px; }
+.v2-head h2 { font-family: var(--display); font-size: 26px; margin: 0; }
+.v2-head p { grid-column: 1 / -1; margin: 0; font-weight: 600; color: #3d4250; max-width: 680px; }
+.v2-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+.v2-card { display: flex; flex-direction: column; border: 3px solid var(--ink); border-radius: 18px; overflow: hidden; background: #fff; color: var(--ink); text-decoration: none; box-shadow: 0 6px 0 var(--ink); transition: transform 0.12s; }
+.v2-card:hover { transform: translateY(-3px); }
+.v2-card img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; background: #16181d; border-bottom: 3px solid var(--ink); }
+.v2-copy { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px 14px; font-size: 14px; font-weight: 600; line-height: 1.35; }
+.v2-copy b { font-family: var(--display); font-size: 18px; font-weight: 400; }
+.v2-more { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+.v2-more .chip { text-decoration: none; color: var(--ink); }
+.mode-card.hoops-survivor { background: #ffd9a8; }
+@media (max-width: 760px) {
+  .v2-grid { grid-template-columns: 1fr; }
+  .v2-head h2 { font-size: 22px; }
+}
+.whats-new-page .guide h1 { margin-top: 10px; }
+.wn-block { display: grid; grid-template-columns: 1.25fr 1fr; gap: 22px; align-items: center; margin-top: 34px; }
+.wn-block.flip img { order: 2; }
+.wn-block img { width: 100%; height: auto; border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 6px 0 var(--ink); background: #16181d; }
+.wn-block.wn-text { grid-template-columns: 1fr; max-width: 720px; }
+.wn-copy h2 { font-family: var(--display); font-size: 24px; margin: 0 0 8px; }
+.wn-copy p { margin: 0; font-size: 16px; line-height: 1.55; }
+.wn-ctas { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 36px; }
+@media (max-width: 760px) {
+  .wn-block { grid-template-columns: 1fr; gap: 12px; }
+  .wn-block.flip img { order: 0; }
+}
+.seo-shell img { max-width: 100%; height: auto; border-radius: 12px; }

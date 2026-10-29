@@ -150,6 +150,20 @@ function angleLerp(a, b, k) {
 const who = (p) => p.name ?? `#${p.number}`
 
 const isDefBack = (p) => p.role === 'CB' || p.role === 'S' || p.role === 'LB'
+const skillPlayer = (p) => p.role !== 'OL' && p.role !== 'C' && p.role !== 'DL'
+
+/** How a player reacts after the whistle: the scorer dances, the beaten DBs hold their heads. */
+function reaction(p, { good, kind, td, scorer, picked }) {
+  if (p.team === 'off') {
+    if (scorer) return p.number % 2 ? 'Dance' : 'Flex'
+    if (good) return skillPlayer(p) ? 'Celebrate' : td ? 'Clap' : 'Idle'
+    if (kind === 'interception' && (p.role === 'QB' || p.role === 'WR')) return 'Dejected'
+    return 'Idle'
+  }
+  if (picked) return 'Dance'
+  if (!good) return isDefBack(p) ? 'Celebrate' : kind === 'sack' || kind === 'interception' ? 'Clap' : 'Idle'
+  return td && isDefBack(p) ? 'Dejected' : 'Idle'
+}
 
 export class PlaySim {
   constructor() {
@@ -231,7 +245,7 @@ export class PlaySim {
     off('OL', -1.6, -1.0, { number: 67, anim: 'Stance' })
     off('OL', 3.2, -1.2, { number: 71, anim: 'Stance' })
     off('OL', -3.2, -1.2, { number: 75, anim: 'Stance' })
-    this.qb = off('QB', 0, -5, { number: 8, anim: 'Idle', feel: r(0.08, 0.3), key: 'qb' })
+    this.qb = off('QB', 0, -5, { number: 8, anim: 'Shotgun', feel: r(0.08, 0.3), key: 'qb' })
     this.stareDown = this.rng() < 0.12 // sometimes the QB locks onto his first read no matter what
     const starts = { rb: [1.6, -5, 22, 'RB'], te: [-4.8, -1.3, 87, 'TE'], x: [17, -1, 18, 'WR'], z: [-14, -1.5, 11, 'WR'], slot: [9, -1.5, 13, 'WR'] }
     const speeds = { rb: 6.4, te: 6.2, x: r(7.8, 8.4), z: r(7.9, 8.5), slot: r(7.6, 8.1) }
@@ -281,13 +295,13 @@ export class PlaySim {
     ;[[-0.9, 1.1], [0.9, 1.1], [-3.8, 1.1], [3.8, 1.1]].forEach(([x, dz], i) => {
       D[`DL${i}`] = def('DL', x, dz, { number: dlNumbers[i], anim: 'Stance', speed: r(5.6, 6.4), shed: (isRun ? r(2.1, 3.3) : r(1.1, 3.2)) - difficulty * 0.12 })
     })
-    D.MLB = def('LB', ...align.MLB, { slot: 'MLB', number: 54, anim: 'Idle', speed: r(6.9, 7.6) })
-    D.SLB = def('LB', ...align.SLB, { slot: 'SLB', number: 50, anim: 'Idle', speed: r(6.8, 7.5) })
-    D.WLB = def('LB', ...align.WLB, { slot: 'WLB', number: 52, anim: 'Idle', speed: r(6.8, 7.5) })
-    D.CBX = def('CB', ...align.CBX, { slot: 'CBX', number: 24, anim: 'Idle', speed: r(7.8, 8.6) })
-    D.CBZ = def('CB', ...align.CBZ, { slot: 'CBZ', number: 21, anim: 'Idle', speed: r(7.8, 8.6) })
-    D.SS = def('S', ...align.SS, { slot: 'SS', number: 31, anim: 'Idle', speed: r(7.5, 8.3) })
-    D.FS = def('S', ...align.FS, { slot: 'FS', number: 29, anim: 'Idle', speed: r(7.7, 8.5) })
+    D.MLB = def('LB', ...align.MLB, { slot: 'MLB', number: 54, anim: 'Ready', speed: r(6.9, 7.6) })
+    D.SLB = def('LB', ...align.SLB, { slot: 'SLB', number: 50, anim: 'Ready', speed: r(6.8, 7.5) })
+    D.WLB = def('LB', ...align.WLB, { slot: 'WLB', number: 52, anim: 'Ready', speed: r(6.8, 7.5) })
+    D.CBX = def('CB', ...align.CBX, { slot: 'CBX', number: 24, anim: 'Ready', speed: r(7.8, 8.6) })
+    D.CBZ = def('CB', ...align.CBZ, { slot: 'CBZ', number: 21, anim: 'Ready', speed: r(7.8, 8.6) })
+    D.SS = def('S', ...align.SS, { slot: 'SS', number: 31, anim: 'Ready', speed: r(7.5, 8.3) })
+    D.FS = def('S', ...align.FS, { slot: 'FS', number: 29, anim: 'Ready', speed: r(7.7, 8.5) })
     for (const p of Object.values(D)) {
       p.react = r(0.12, 0.42) - difficulty * 0.03
       if (isRun && p.role !== 'DL') p.react += pb.run.draw ? 0 : r(0.25, 0.9) // the play fake freezes the second level
@@ -635,6 +649,7 @@ export class PlaySim {
         const { gain, first } = this.result
         this.message = `${who(c)} gets down after ${gain} yard${Math.abs(gain) === 1 ? '' : 's'}${first ? ' — FIRST DOWN!' : ''}`
         c.pendingFall = t + 0.05
+        c.sliding = true
         this.emit('slide')
         return true
       }
@@ -647,7 +662,7 @@ export class PlaySim {
   spike(t) {
     const b = this.ball
     const qb = this.qb
-    this.oneShot(qb, 'Throw')
+    this.oneShot(qb, 'Spike')
     qb.threw = true
     b.state = 'loose'
     b.holder = null
@@ -772,14 +787,14 @@ export class PlaySim {
   finish() {
     this.phase = 'over'
     const good = this.result?.good
+    const kind = this.result?.kind
+    const td = kind === 'touchdown'
     const focus = this.carrier ?? this.interceptor ?? this.target
     for (const p of this.players) {
       if (p.down) continue
       p.locked = false
       p.face = focus && p !== focus ? focus.pos : null
-      const skill = p.role !== 'OL' && p.role !== 'C'
-      if (p.team === 'off') p.anim = good && skill ? 'Celebrate' : 'Idle'
-      else p.anim = !good && isDefBack(p) ? 'Celebrate' : 'Idle'
+      p.anim = reaction(p, { good, kind, td, scorer: td && p === this.carrier, picked: p === this.interceptor })
     }
   }
 
@@ -822,10 +837,32 @@ export class PlaySim {
       p.animScale = 1
       return
     }
+    // ball carrier moves (cosmetic: the sim already moved him)
+    if (p.juke && this.t < p.juke.until) {
+      p.anim = p.juke.dir > 0 ? 'JukeL' : 'JukeR'
+      p.animScale = 1
+      return
+    }
+    if (p.spinUntil > this.t) {
+      p.anim = 'Spin'
+      p.animScale = 1
+      return
+    }
     if (speed > 0.6) {
       const forward = Math.sin(p.yaw) * p.vel.x + Math.cos(p.yaw) * p.vel.z
-      p.anim = 'Run'
-      p.animScale = THREE.MathUtils.clamp(speed / 6.5, 0.55, 1.45) * (forward < -0.3 * speed ? -1 : 1)
+      const carrying = this.ball.holder === p && this.ball.state === 'held'
+      if (forward < -0.3 * speed) {
+        // dropping back or backpedaling in coverage
+        p.anim = 'Backpedal'
+        p.animScale = THREE.MathUtils.clamp(speed / 5, 0.6, 1.5)
+      } else if (p.team === 'def' && speed < 6 && Math.abs(forward) < 0.55 * speed) {
+        // sliding sideways while keeping eyes on the play
+        p.anim = 'Shuffle'
+        p.animScale = THREE.MathUtils.clamp(speed / 4, 0.7, 1.5)
+      } else {
+        p.anim = carrying ? 'RunBall' : 'Run'
+        p.animScale = THREE.MathUtils.clamp(speed / 6.5, 0.55, 1.45)
+      }
     } else {
       p.anim = 'Idle'
       p.animScale = 1
@@ -1390,7 +1427,7 @@ export class PlaySim {
 
   sack(t, d) {
     const qb = this.qb
-    this.oneShot(d, 'Dive')
+    this.oneShot(d, 'Tackle')
     d.down = true
     d.yaw = Math.atan2(qb.pos.x - d.pos.x, qb.pos.z - d.pos.z)
     d.vel.set(Math.sin(d.yaw), 0, Math.cos(d.yaw)).multiplyScalar(3)
@@ -1505,7 +1542,7 @@ export class PlaySim {
       tmp.copy(c.vel).setY(0)
       const fromBehind = tmp.lengthSq() > 4 && tmp.normalize().dot(tmp2.subVectors(c.pos, d.pos).setY(0).normalize()) > 0.6
       if (fromBehind && dist > 1.25) continue
-      this.oneShot(d, 'Dive')
+      this.oneShot(d, 'Tackle')
       d.down = true
       d.face = null
       d.yaw = Math.atan2(c.pos.x - d.pos.x, c.pos.z - d.pos.z)
@@ -1569,7 +1606,7 @@ export class PlaySim {
     if (c && c.pendingFall && t >= c.pendingFall) {
       c.pendingFall = null
       c.down = true
-      this.oneShot(c, 'Fall')
+      this.oneShot(c, c.sliding ? 'Slide' : 'Fall')
       this.ball.state = 'dead'
     }
   }
